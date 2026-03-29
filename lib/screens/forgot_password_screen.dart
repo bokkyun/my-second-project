@@ -1,63 +1,39 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
 
-class SignupScreen extends StatefulWidget {
-  const SignupScreen({super.key});
+class ForgotPasswordScreen extends StatefulWidget {
+  const ForgotPasswordScreen({super.key});
 
   @override
-  State<SignupScreen> createState() => _SignupScreenState();
+  State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
 }
 
-class _SignupScreenState extends State<SignupScreen> {
+class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _emailCtrl = TextEditingController();
-  final _nicknameCtrl = TextEditingController();
-  final _passwordCtrl = TextEditingController();
-  final _confirmCtrl = TextEditingController();
-  bool _showPassword = false;
   bool _loading = false;
   String _error = '';
-  bool _success = false;
+  bool _sent = false;
 
   @override
   void dispose() {
     _emailCtrl.dispose();
-    _nicknameCtrl.dispose();
-    _passwordCtrl.dispose();
-    _confirmCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     final email = _emailCtrl.text.trim();
-    final password = _passwordCtrl.text;
-    final confirm = _confirmCtrl.text;
-    final nickname = _nicknameCtrl.text.trim();
-
     if (email.isEmpty) {
       setState(() => _error = '이메일을 입력해주세요.');
-      return;
-    }
-    if (password != confirm) {
-      setState(() => _error = '비밀번호가 일치하지 않습니다.');
-      return;
-    }
-    if (password.length < 6) {
-      setState(() => _error = '비밀번호는 6자 이상이어야 합니다.');
       return;
     }
 
     setState(() { _error = ''; _loading = true; });
     try {
-      await AuthService.signUp(email, password, nickname);
-      if (mounted) setState(() { _success = true; _loading = false; });
-    } on AuthException catch (e) {
-      String msg = '회원가입에 실패했습니다. 다시 시도해주세요.';
-      if (e.message.contains('already registered')) msg = '이미 사용 중인 이메일입니다.';
-      setState(() { _error = msg; _loading = false; });
-    } catch (e) {
-      setState(() { _error = '오류: $e'; _loading = false; });
+      await AuthService.resetPassword(email);
+      if (mounted) setState(() { _sent = true; _loading = false; });
+    } catch (_) {
+      setState(() { _error = '이메일 발송에 실패했습니다. 이메일 주소를 확인해주세요.'; _loading = false; });
     }
   }
 
@@ -83,7 +59,7 @@ class _SignupScreenState extends State<SignupScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 child: Padding(
                   padding: const EdgeInsets.all(32),
-                  child: _success ? _buildSuccess(cs) : _buildForm(cs),
+                  child: _sent ? _buildSent(cs) : _buildForm(cs),
                 ),
               ),
             ),
@@ -93,14 +69,14 @@ class _SignupScreenState extends State<SignupScreen> {
     );
   }
 
-  Widget _buildSuccess(ColorScheme cs) {
+  Widget _buildSent(ColorScheme cs) {
     return Column(mainAxisSize: MainAxisSize.min, children: [
       Icon(Icons.mark_email_read, color: cs.primary, size: 56),
       const SizedBox(height: 12),
       const Text('이메일을 확인해주세요', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
       const SizedBox(height: 8),
       Text(
-        '${_emailCtrl.text}로 인증 링크를 발송했습니다.\n이메일의 링크를 클릭하면 가입이 완료됩니다.',
+        '${_emailCtrl.text}로 비밀번호 재설정 링크를 발송했습니다.',
         textAlign: TextAlign.center,
         style: const TextStyle(fontSize: 14, color: Colors.grey),
       ),
@@ -109,7 +85,7 @@ class _SignupScreenState extends State<SignupScreen> {
         width: double.infinity,
         child: ElevatedButton(
           onPressed: () => context.go('/login'),
-          child: const Text('로그인 페이지로 이동'),
+          child: const Text('로그인으로 돌아가기'),
         ),
       ),
     ]);
@@ -119,10 +95,16 @@ class _SignupScreenState extends State<SignupScreen> {
     return Column(mainAxisSize: MainAxisSize.min, children: [
       Row(children: [
         IconButton(onPressed: () => context.go('/login'), icon: const Icon(Icons.arrow_back)),
-        const Expanded(child: Center(child: Text('TeamSync 회원가입',
+        const Expanded(child: Center(child: Text('비밀번호 재설정',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)))),
         const SizedBox(width: 40),
       ]),
+      const SizedBox(height: 8),
+      const Text(
+        '가입한 이메일을 입력하면 비밀번호 재설정 링크를 보내드립니다.',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 13, color: Colors.grey),
+      ),
       const SizedBox(height: 20),
 
       if (_error.isNotEmpty) ...[
@@ -136,7 +118,7 @@ class _SignupScreenState extends State<SignupScreen> {
           child: Row(children: [
             Icon(Icons.error_outline, color: Colors.red.shade600, size: 18),
             const SizedBox(width: 8),
-            Expanded(child: Text(_error, style: TextStyle(color: Colors.red.shade700, fontSize: 13))),
+            Expanded(child: Text(_error, style: TextStyle(color: Colors.red.shade700))),
           ]),
         ),
         const SizedBox(height: 16),
@@ -145,40 +127,8 @@ class _SignupScreenState extends State<SignupScreen> {
       TextField(
         controller: _emailCtrl,
         keyboardType: TextInputType.emailAddress,
-        decoration: const InputDecoration(
-          labelText: '이메일',
-          counterText: '',
-        ),
-      ),
-      const SizedBox(height: 12),
-      TextField(
-        controller: _nicknameCtrl,
-        decoration: const InputDecoration(
-          labelText: '닉네임 (선택)',
-          helperText: '비워두면 이메일 앞부분이 닉네임으로 사용됩니다',
-          counterText: '',
-        ),
-        maxLength: 20,
-      ),
-      const SizedBox(height: 12),
-      TextField(
-        controller: _passwordCtrl,
-        obscureText: !_showPassword,
-        decoration: InputDecoration(
-          labelText: '비밀번호',
-          helperText: '6자 이상',
-          counterText: '',
-          suffixIcon: IconButton(
-            icon: Icon(_showPassword ? Icons.visibility_off : Icons.visibility),
-            onPressed: () => setState(() => _showPassword = !_showPassword),
-          ),
-        ),
-      ),
-      const SizedBox(height: 12),
-      TextField(
-        controller: _confirmCtrl,
-        obscureText: !_showPassword,
-        decoration: const InputDecoration(labelText: '비밀번호 확인', counterText: ''),
+        decoration: const InputDecoration(labelText: '이메일'),
+        onSubmitted: (_) => _submit(),
       ),
       const SizedBox(height: 24),
 
@@ -189,7 +139,7 @@ class _SignupScreenState extends State<SignupScreen> {
           style: ElevatedButton.styleFrom(backgroundColor: cs.primary, foregroundColor: cs.onPrimary),
           child: _loading
               ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-              : const Text('회원가입', style: TextStyle(fontSize: 16)),
+              : const Text('재설정 링크 발송', style: TextStyle(fontSize: 16)),
         ),
       ),
     ]);
