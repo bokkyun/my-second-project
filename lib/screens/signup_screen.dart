@@ -11,7 +11,7 @@ class SignupScreen extends StatefulWidget {
 }
 
 class _SignupScreenState extends State<SignupScreen> {
-  final _emailCtrl = TextEditingController();
+  final _usernameCtrl = TextEditingController();
   final _nicknameCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
@@ -22,21 +22,23 @@ class _SignupScreenState extends State<SignupScreen> {
 
   @override
   void dispose() {
-    _emailCtrl.dispose();
+    _usernameCtrl.dispose();
     _nicknameCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
     super.dispose();
   }
 
+  bool _isValidUsername(String v) => RegExp(r'^[a-zA-Z0-9_-]{3,20}$').hasMatch(v);
+
   Future<void> _submit() async {
-    final email = _emailCtrl.text.trim();
+    final username = _usernameCtrl.text.trim();
     final password = _passwordCtrl.text;
     final confirm = _confirmCtrl.text;
     final nickname = _nicknameCtrl.text.trim();
 
-    if (email.isEmpty) {
-      setState(() => _error = '이메일을 입력해주세요.');
+    if (!_isValidUsername(username)) {
+      setState(() => _error = '아이디는 3~20자의 영문, 숫자, _(밑줄), -(하이픈)만 사용 가능합니다.');
       return;
     }
     if (password != confirm) {
@@ -50,11 +52,11 @@ class _SignupScreenState extends State<SignupScreen> {
 
     setState(() { _error = ''; _loading = true; });
     try {
-      await AuthService.signUp(email, password, nickname);
+      await AuthService.signUp(username, password, nickname);
       if (mounted) setState(() { _success = true; _loading = false; });
     } on AuthException catch (e) {
       String msg = '회원가입에 실패했습니다. 다시 시도해주세요.';
-      if (e.message.contains('already registered')) msg = '이미 사용 중인 이메일입니다.';
+      if (e.message.contains('already registered')) msg = '이미 사용 중인 아이디입니다.';
       setState(() { _error = msg; _loading = false; });
     } catch (e) {
       setState(() { _error = '오류: $e'; _loading = false; });
@@ -83,7 +85,7 @@ class _SignupScreenState extends State<SignupScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 child: Padding(
                   padding: const EdgeInsets.all(32),
-                  child: _success ? _buildSuccess(cs) : _buildForm(cs),
+                  child: _success ? _buildSuccess() : _buildForm(cs),
                 ),
               ),
             ),
@@ -93,23 +95,17 @@ class _SignupScreenState extends State<SignupScreen> {
     );
   }
 
-  Widget _buildSuccess(ColorScheme cs) {
+  Widget _buildSuccess() {
     return Column(mainAxisSize: MainAxisSize.min, children: [
-      Icon(Icons.mark_email_read, color: cs.primary, size: 56),
+      const Icon(Icons.check_circle, color: Colors.green, size: 52),
       const SizedBox(height: 12),
-      const Text('이메일을 확인해주세요', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-      const SizedBox(height: 8),
-      Text(
-        '${_emailCtrl.text}로 인증 링크를 발송했습니다.\n이메일의 링크를 클릭하면 가입이 완료됩니다.',
-        textAlign: TextAlign.center,
-        style: const TextStyle(fontSize: 14, color: Colors.grey),
-      ),
-      const SizedBox(height: 24),
+      const Text('회원가입이 완료되었습니다!', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+      const SizedBox(height: 20),
       SizedBox(
         width: double.infinity,
         child: ElevatedButton(
           onPressed: () => context.go('/login'),
-          child: const Text('로그인 페이지로 이동'),
+          child: const Text('로그인하러 가기'),
         ),
       ),
     ]);
@@ -143,19 +139,19 @@ class _SignupScreenState extends State<SignupScreen> {
       ],
 
       TextField(
-        controller: _emailCtrl,
-        keyboardType: TextInputType.emailAddress,
+        controller: _usernameCtrl,
         decoration: const InputDecoration(
-          labelText: '이메일',
-          counterText: '',
+          labelText: '아이디',
+          helperText: '3~20자, 영문·숫자·_(밑줄)·-(하이픈) 사용 가능',
         ),
+        maxLength: 20,
       ),
       const SizedBox(height: 12),
       TextField(
         controller: _nicknameCtrl,
         decoration: const InputDecoration(
           labelText: '닉네임 (선택)',
-          helperText: '비워두면 이메일 앞부분이 닉네임으로 사용됩니다',
+          helperText: '비워두면 아이디가 닉네임으로 사용됩니다',
           counterText: '',
         ),
         maxLength: 20,

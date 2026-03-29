@@ -11,7 +11,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailCtrl = TextEditingController();
+  final _usernameCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   bool _showPassword = false;
   bool _loading = false;
@@ -19,7 +19,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
-    _emailCtrl.dispose();
+    _usernameCtrl.dispose();
     _passwordCtrl.dispose();
     super.dispose();
   }
@@ -27,14 +27,10 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _submit() async {
     setState(() { _error = ''; _loading = true; });
     try {
-      await AuthService.signIn(_emailCtrl.text.trim(), _passwordCtrl.text);
+      await AuthService.signIn(_usernameCtrl.text.trim(), _passwordCtrl.text);
       if (mounted) context.go('/calendar');
-    } on AuthException catch (e) {
-      if (e.message.contains('Email not confirmed')) {
-        setState(() => _error = '이메일 인증이 완료되지 않았습니다. 이메일을 확인해주세요.');
-      } else {
-        setState(() => _error = '이메일 또는 비밀번호가 올바르지 않습니다.');
-      }
+    } on AuthException {
+      setState(() => _error = '아이디 또는 비밀번호가 올바르지 않습니다.');
     } catch (_) {
       setState(() => _error = '로그인 중 오류가 발생했습니다.');
     } finally {
@@ -70,7 +66,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       Icon(Icons.calendar_month, size: 52, color: cs.primary),
                       const SizedBox(height: 8),
                       Text('TeamSync', style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold, color: cs.primary)),
+                        fontWeight: FontWeight.bold, color: cs.primary)),
                       const SizedBox(height: 4),
                       Text('공유 스케줄 관리 서비스',
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey)),
@@ -94,9 +90,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       ],
 
                       TextField(
-                        controller: _emailCtrl,
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: const InputDecoration(labelText: '이메일'),
+                        controller: _usernameCtrl,
+                        decoration: const InputDecoration(labelText: '아이디'),
+                        maxLength: 20,
                         onSubmitted: (_) => _submit(),
                       ),
                       const SizedBox(height: 12),
@@ -113,19 +109,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         onSubmitted: (_) => _submit(),
                       ),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: () => context.go('/forgot-password'),
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          child: const Text('비밀번호를 잊으셨나요?', style: TextStyle(fontSize: 13)),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 24),
 
                       SizedBox(
                         width: double.infinity,
