@@ -67,6 +67,8 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
                   labelText: '그룹 이름 검색',
                   prefixIcon: Icon(Icons.search),
                 ),
+                textInputAction: TextInputAction.done,
+                keyboardType: TextInputType.text,
                 onSubmitted: (_) => _search(),
               ),
             ),
