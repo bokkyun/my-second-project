@@ -8,6 +8,8 @@ class EventFormSheet extends StatefulWidget {
   final DateTime? defaultDate;
   final CalendarEvent? editEvent;
   final List<Group> groups;
+  final Set<String> adminGroupIds;
+  final Future<List<Map<String, dynamic>>> Function(String groupId)? onFetchMembers;
   final Future<void> Function({
     required String title,
     String? description,
@@ -16,6 +18,7 @@ class EventFormSheet extends StatefulWidget {
     required bool isAllDay,
     required String color,
     required List<String> groupIds,
+    String? targetUserId,
   }) onSave;
 
   const EventFormSheet({
@@ -24,6 +27,8 @@ class EventFormSheet extends StatefulWidget {
     this.editEvent,
     required this.groups,
     required this.onSave,
+    this.adminGroupIds = const {},
+    this.onFetchMembers,
   });
 
   @override
@@ -39,6 +44,9 @@ class _EventFormSheetState extends State<EventFormSheet> {
   Color _color = const Color(0xFF1976D2);
   final Set<String> _selectedGroupIds = {};
   bool _saving = false;
+  String? _targetUserId;
+  List<Map<String, dynamic>> _groupMembers = [];
+  bool _membersLoading = false;
 
   @override
   void initState() {
@@ -56,6 +64,26 @@ class _EventFormSheetState extends State<EventFormSheet> {
       final base = widget.defaultDate ?? DateTime.now();
       _startsAt = DateTime(base.year, base.month, base.day, 9);
       _endsAt = DateTime(base.year, base.month, base.day, 10);
+      if (widget.adminGroupIds.isNotEmpty && widget.onFetchMembers != null) {
+        _loadGroupMembers();
+      }
+    }
+  }
+
+  Future<void> _loadGroupMembers() async {
+    setState(() => _membersLoading = true);
+    try {
+      final results = await Future.wait(
+        widget.adminGroupIds.map((gid) => widget.onFetchMembers!(gid)),
+      );
+      final all = results.expand((r) => r).toList();
+      final unique = <String, Map<String, dynamic>>{};
+      for (final m in all) {
+        unique[m['id'] as String] = m;
+      }
+      if (mounted) setState(() => _groupMembers = unique.values.toList());
+    } finally {
+      if (mounted) setState(() => _membersLoading = false);
     }
   }
 
@@ -112,6 +140,7 @@ class _EventFormSheetState extends State<EventFormSheet> {
         isAllDay: _isAllDay,
         color: _colorToHex(_color),
         groupIds: _selectedGroupIds.toList(),
+        targetUserId: _targetUserId,
       );
       if (mounted) Navigator.pop(context);
     } catch (_) {
@@ -230,6 +259,35 @@ class _EventFormSheetState extends State<EventFormSheet> {
                   ),
                 ]),
                 const SizedBox(height: 16),
+
+                /** 등록 대상 선택 (관리자만 표시) */
+                if (widget.editEvent == null && widget.adminGroupIds.isNotEmpty) ...[
+                  const Text('등록 대상', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  _membersLoading
+                      ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+                      : DropdownButtonFormField<String?>(
+                          value: _targetUserId,
+                          decoration: const InputDecoration(
+                            labelText: '등록 대상',
+                            border: OutlineInputBorder(),
+                            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          ),
+                          items: [
+                            const DropdownMenuItem(value: null, child: Text('본인 (나)')),
+                            ..._groupMembers.map((m) => DropdownMenuItem(
+                              value: m['id'] as String,
+                              child: Text(
+                                m['nickname'] as String? ??
+                                m['email'] as String? ??
+                                m['id'] as String,
+                              ),
+                            )),
+                          ],
+                          onChanged: (v) => setState(() => _targetUserId = v),
+                        ),
+                  const SizedBox(height: 16),
+                ],
 
                 if (widget.groups.isNotEmpty) ...[
                   const Text('공유할 그룹', style: TextStyle(fontWeight: FontWeight.w600)),

@@ -93,6 +93,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   void _openEventForm({DateTime? date, CalendarEvent? editEvent}) {
+    final adminGroupIds = _groups
+        .where((g) => g.myRole == 'admin')
+        .map((g) => g.id)
+        .toSet();
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -101,19 +106,22 @@ class _CalendarScreenState extends State<CalendarScreen> {
         defaultDate: date,
         editEvent: editEvent,
         groups: _groups,
-        onSave: ({required title, description, required startsAt, required endsAt, required isAllDay, required color, required groupIds}) async {
-          final userId = AuthService.currentUser!.id;
+        adminGroupIds: editEvent == null ? adminGroupIds : const {},
+        onFetchMembers: editEvent == null ? GroupService.fetchGroupMembers : null,
+        onSave: ({required title, description, required startsAt, required endsAt, required isAllDay, required color, required groupIds, String? targetUserId}) async {
+          final currentUserId = AuthService.currentUser!.id;
           if (editEvent != null) {
             await EventService.updateEvent(
-              eventId: editEvent.id, userId: userId,
+              eventId: editEvent.id, userId: currentUserId,
               title: title, description: description,
               startsAt: startsAt, endsAt: endsAt,
               isAllDay: isAllDay, color: color, groupIds: groupIds,
               isAdminOverride: _isAdminOfEvent(editEvent),
             );
           } else {
+            final creatorId = targetUserId ?? currentUserId;
             await EventService.createEvent(
-              userId: userId, title: title, description: description,
+              userId: creatorId, title: title, description: description,
               startsAt: startsAt, endsAt: endsAt,
               isAllDay: isAllDay, color: color, groupIds: groupIds,
             );
