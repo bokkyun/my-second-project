@@ -8,6 +8,7 @@ import '../models/group.dart';
 import '../services/auth_service.dart';
 import '../services/event_service.dart';
 import '../services/group_service.dart';
+import '../services/notification_service.dart';
 import '../widgets/event_form_sheet.dart';
 import '../widgets/event_detail_sheet.dart';
 import '../widgets/group_info_sheet.dart';
@@ -67,7 +68,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
     setState(() => _loadingEvents = true);
     final events = await EventService.fetchEvents(
         AuthService.currentUser!.id, _visibleGroupIds.toList());
-    if (mounted) setState(() { _events = events; _loadingEvents = false; });
+    if (mounted) {
+      setState(() { _events = events; _loadingEvents = false; });
+      /** 오늘 일정 알림 예약 */
+      await NotificationService.scheduleTodayEvents(events);
+    }
   }
 
   List<CalendarEvent> _eventsForDay(DateTime day) {

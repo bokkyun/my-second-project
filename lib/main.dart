@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'router.dart';
+import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('ko_KR');
+  await NotificationService.initialize();
   await Supabase.initialize(
     url: 'https://qrucuqdehrdqgsunfwfd.supabase.co',
     anonKey:
