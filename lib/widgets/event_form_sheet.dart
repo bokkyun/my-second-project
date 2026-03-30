@@ -64,24 +64,42 @@ class _EventFormSheetState extends State<EventFormSheet> {
       final base = widget.defaultDate ?? DateTime.now();
       _startsAt = DateTime(base.year, base.month, base.day, 9);
       _endsAt = DateTime(base.year, base.month, base.day, 10);
-      if (widget.adminGroupIds.isNotEmpty && widget.onFetchMembers != null) {
-        _loadGroupMembers();
-      }
     }
   }
 
-  Future<void> _loadGroupMembers() async {
+  /** 체크된 관리자 그룹의 멤버만 로드 */
+  Future<void> _updateMembersForSelectedGroups() async {
+    if (widget.onFetchMembers == null) return;
+
+    final selectedAdminGroupIds = _selectedGroupIds
+        .where((gid) => widget.adminGroupIds.contains(gid))
+        .toList();
+
+    if (selectedAdminGroupIds.isEmpty) {
+      if (mounted) setState(() { _groupMembers = []; _targetUserId = null; });
+      return;
+    }
+
     setState(() => _membersLoading = true);
     try {
       final results = await Future.wait(
-        widget.adminGroupIds.map((gid) => widget.onFetchMembers!(gid)),
+        selectedAdminGroupIds.map((gid) => widget.onFetchMembers!(gid)),
       );
       final all = results.expand((r) => r).toList();
       final unique = <String, Map<String, dynamic>>{};
       for (final m in all) {
         unique[m['id'] as String] = m;
       }
-      if (mounted) setState(() => _groupMembers = unique.values.toList());
+      if (mounted) {
+        final newMembers = unique.values.toList();
+        setState(() {
+          _groupMembers = newMembers;
+          /** 선택된 멤버가 새 목록에 없으면 초기화 */
+          if (_targetUserId != null && !newMembers.any((m) => m['id'] == _targetUserId)) {
+            _targetUserId = null;
+          }
+        });
+      }
     } finally {
       if (mounted) setState(() => _membersLoading = false);
     }
@@ -260,8 +278,8 @@ class _EventFormSheetState extends State<EventFormSheet> {
                 ]),
                 const SizedBox(height: 16),
 
-                /** 등록 대상 선택 (관리자만 표시) */
-                if (widget.editEvent == null && widget.adminGroupIds.isNotEmpty) ...[
+                /** 등록 대상 선택 - 체크된 그룹 중 관리자 그룹이 있을 때만 표시 */
+                if (widget.editEvent == null && (_membersLoading || _groupMembers.isNotEmpty)) ...[
                   const Text('등록 대상', style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
                   _membersLoading
@@ -301,10 +319,15 @@ class _EventFormSheetState extends State<EventFormSheet> {
                         selected: selected,
                         selectedColor: g.flutterColor.withOpacity(0.25),
                         checkmarkColor: g.flutterColor,
-                        onSelected: (v) => setState(() {
-                          if (v) _selectedGroupIds.add(g.id);
-                          else _selectedGroupIds.remove(g.id);
-                        }),
+                        onSelected: (v) {
+                          setState(() {
+                            if (v) _selectedGroupIds.add(g.id);
+                            else _selectedGroupIds.remove(g.id);
+                          });
+                          if (widget.adminGroupIds.contains(g.id)) {
+                            _updateMembersForSelectedGroups();
+                          }
+                        },
                       );
                     }).toList(),
                   ),
