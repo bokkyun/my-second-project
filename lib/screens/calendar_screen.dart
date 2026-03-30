@@ -79,6 +79,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }).toList();
   }
 
+  /** 이벤트에 대해 현재 유저가 그룹 관리자인지 확인 */
+  bool _isAdminOfEvent(CalendarEvent event) {
+    if (event.creatorId == AuthService.currentUser!.id) return false;
+    return event.groupIds.any(
+      (gid) => _groups.any((g) => g.id == gid && g.myRole == 'admin'),
+    );
+  }
+
   void _openEventForm({DateTime? date, CalendarEvent? editEvent}) {
     showModalBottomSheet(
       context: context,
@@ -96,6 +104,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               title: title, description: description,
               startsAt: startsAt, endsAt: endsAt,
               isAllDay: isAllDay, color: color, groupIds: groupIds,
+              isAdminOverride: _isAdminOfEvent(editEvent),
             );
           } else {
             await EventService.createEvent(
@@ -146,7 +155,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
             ),
           );
           if (confirmed == true) {
-            await EventService.deleteEvent(event.id, AuthService.currentUser!.id);
+            await EventService.deleteEvent(
+              event.id, AuthService.currentUser!.id,
+              isAdminOverride: _isAdminOfEvent(event),
+            );
             await _loadEvents();
             if (mounted) ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('일정이 삭제되었습니다.')));
@@ -174,6 +186,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
           await _loadAll();
           if (mounted) ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('그룹이 삭제되었습니다.')));
+        },
+        onChangeAdmin: (gid, newAdminUserId) async {
+          await GroupService.changeGroupAdmin(gid, newAdminUserId, AuthService.currentUser!.id);
+          await _loadAll();
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('관리자가 변경되었습니다.')));
         },
       ),
     );

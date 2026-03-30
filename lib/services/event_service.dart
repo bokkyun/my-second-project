@@ -99,19 +99,21 @@ class EventService {
     required bool isAllDay,
     required String color,
     required List<String> groupIds,
+    bool isAdminOverride = false,
   }) async {
-    await _db
-        .from('events')
-        .update({
-          'title': title,
-          'description': description,
-          'starts_at': startsAt.toUtc().toIso8601String(),
-          'ends_at': endsAt.toUtc().toIso8601String(),
-          'is_all_day': isAllDay,
-          'color': color,
-        })
-        .eq('id', eventId)
-        .eq('creator_id', userId);
+    final query = _db.from('events').update({
+      'title': title,
+      'description': description,
+      'starts_at': startsAt.toUtc().toIso8601String(),
+      'ends_at': endsAt.toUtc().toIso8601String(),
+      'is_all_day': isAllDay,
+      'color': color,
+    }).eq('id', eventId);
+    if (isAdminOverride) {
+      await query;
+    } else {
+      await query.eq('creator_id', userId);
+    }
 
     await _db.from('event_visibility').delete().eq('event_id', eventId);
     if (groupIds.isNotEmpty) {
@@ -121,11 +123,13 @@ class EventService {
     }
   }
 
-  static Future<void> deleteEvent(String eventId, String userId) async {
-    await _db
-        .from('events')
-        .delete()
-        .eq('id', eventId)
-        .eq('creator_id', userId);
+  static Future<void> deleteEvent(String eventId, String userId,
+      {bool isAdminOverride = false}) async {
+    final query = _db.from('events').delete().eq('id', eventId);
+    if (isAdminOverride) {
+      await query;
+    } else {
+      await query.eq('creator_id', userId);
+    }
   }
 }

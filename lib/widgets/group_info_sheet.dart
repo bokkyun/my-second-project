@@ -6,12 +6,14 @@ class GroupInfoSheet extends StatefulWidget {
   final Group group;
   final Future<void> Function(String groupId) onLeave;
   final Future<void> Function(String groupId) onDelete;
+  final Future<void> Function(String groupId, String newAdminUserId)? onChangeAdmin;
 
   const GroupInfoSheet({
     super.key,
     required this.group,
     required this.onLeave,
     required this.onDelete,
+    this.onChangeAdmin,
   });
 
   @override
@@ -21,6 +23,8 @@ class GroupInfoSheet extends StatefulWidget {
 class _GroupInfoSheetState extends State<GroupInfoSheet> {
   List<Map<String, dynamic>> _members = [];
   bool _loading = true;
+  bool _changeAdminMode = false;
+  String? _selectedNewAdminId;
 
   @override
   void initState() {
@@ -37,6 +41,29 @@ class _GroupInfoSheetState extends State<GroupInfoSheet> {
     if (role == 'admin') return '관리자';
     if (role == 'readonly') return '읽기 전용';
     return '일반 멤버';
+  }
+
+  Future<void> _handleChangeAdmin() async {
+    if (_selectedNewAdminId == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('관리자 변경'),
+        content: const Text('선택한 멤버에게 관리자 권한을 이전합니다.\n현재 관리자는 일반 멤버로 변경됩니다.'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('변경'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      Navigator.pop(context);
+      await widget.onChangeAdmin!(widget.group.id, _selectedNewAdminId!);
+    }
   }
 
   Future<void> _confirmAction(String title, String content, Future<void> Function() action) async {
@@ -60,6 +87,46 @@ class _GroupInfoSheetState extends State<GroupInfoSheet> {
       Navigator.pop(context);
       await action();
     }
+  }
+
+  Widget _buildChangeAdminPanel() {
+    final nonAdminMembers = _members.where((m) => m['role'] != 'admin').toList();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('새 관리자를 선택하세요', style: TextStyle(fontWeight: FontWeight.w600)),
+      const SizedBox(height: 4),
+      const Text('현재 관리자 권한이 이전됩니다.',
+          style: TextStyle(fontSize: 12, color: Colors.grey)),
+      const SizedBox(height: 12),
+      DropdownButtonFormField<String>(
+        value: _selectedNewAdminId,
+        decoration: const InputDecoration(
+          labelText: '새 관리자',
+          border: OutlineInputBorder(),
+          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        ),
+        items: nonAdminMembers.map((m) {
+          final label = m['nickname'] as String? ?? m['email'] as String? ?? '알 수 없음';
+          return DropdownMenuItem<String>(value: m['id'] as String, child: Text(label));
+        }).toList(),
+        onChanged: (v) => setState(() => _selectedNewAdminId = v),
+      ),
+      const SizedBox(height: 12),
+      Row(children: [
+        Expanded(
+          child: OutlinedButton(
+            onPressed: () => setState(() { _changeAdminMode = false; _selectedNewAdminId = null; }),
+            child: const Text('취소'),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: ElevatedButton(
+            onPressed: _selectedNewAdminId != null ? _handleChangeAdmin : null,
+            child: const Text('변경'),
+          ),
+        ),
+      ]),
+    ]);
   }
 
   @override
@@ -149,41 +216,52 @@ class _GroupInfoSheetState extends State<GroupInfoSheet> {
         // 하단 버튼
         Padding(
           padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + MediaQuery.of(context).padding.bottom),
-          child: Row(children: [
-            if (group.myRole == 'admin')
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => _confirmAction(
-                    '그룹 삭제',
-                    '${group.name} 그룹을 삭제하면 복구할 수 없습니다.',
-                    () => widget.onDelete(group.id),
+          child: _changeAdminMode
+              ? _buildChangeAdminPanel()
+              : Row(children: [
+                  if (group.myRole == 'admin') ...[
+                    if (widget.onChangeAdmin != null && _members.any((m) => m['role'] != 'admin'))
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => setState(() { _changeAdminMode = true; _selectedNewAdminId = null; }),
+                          icon: const Icon(Icons.admin_panel_settings, size: 18),
+                          label: const Text('관리자 변경'),
+                        ),
+                      ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _confirmAction(
+                          '그룹 삭제',
+                          '${group.name} 그룹을 삭제하면 복구할 수 없습니다.',
+                          () => widget.onDelete(group.id),
+                        ),
+                        icon: const Icon(Icons.delete, color: Colors.red),
+                        label: const Text('그룹 삭제', style: TextStyle(color: Colors.red)),
+                        style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.red)),
+                      ),
+                    ),
+                  ] else
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _confirmAction(
+                          '그룹 탈퇴',
+                          '${group.name} 그룹에서 탈퇴하시겠습니까?',
+                          () => widget.onLeave(group.id),
+                        ),
+                        icon: const Icon(Icons.exit_to_app, color: Colors.red),
+                        label: const Text('그룹 탈퇴', style: TextStyle(color: Colors.red)),
+                        style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.red)),
+                      ),
+                    ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('닫기'),
+                    ),
                   ),
-                  icon: const Icon(Icons.delete, color: Colors.red),
-                  label: const Text('그룹 삭제', style: TextStyle(color: Colors.red)),
-                  style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.red)),
-                ),
-              )
-            else
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => _confirmAction(
-                    '그룹 탈퇴',
-                    '${group.name} 그룹에서 탈퇴하시겠습니까?',
-                    () => widget.onLeave(group.id),
-                  ),
-                  icon: const Icon(Icons.exit_to_app, color: Colors.red),
-                  label: const Text('그룹 탈퇴', style: TextStyle(color: Colors.red)),
-                  style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.red)),
-                ),
-              ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('닫기'),
-              ),
-            ),
-          ]),
+                ]),
         ),
       ]),
     );

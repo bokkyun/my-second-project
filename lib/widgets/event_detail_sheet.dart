@@ -26,6 +26,10 @@ class EventDetailSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isOwner = event.creatorId == currentUserId;
+    final isGroupAdmin = event.groupIds.any(
+      (gid) => groups.any((g) => g.id == gid && g.myRole == 'admin'),
+    );
+    final canEdit = isOwner || isGroupAdmin;
     final sharedGroups = groups.where((g) => event.groupIds.contains(g.id)).toList();
 
     return Container(
@@ -100,7 +104,7 @@ class EventDetailSheet extends StatelessWidget {
               ]),
             ],
 
-            if (isOwner) ...[
+            if (canEdit) ...[
               const SizedBox(height: 16),
               Row(children: [
                 Expanded(

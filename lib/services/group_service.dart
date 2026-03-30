@@ -88,4 +88,19 @@ class GroupService {
         .eq('id', groupId)
         .eq('created_by', userId);
   }
+
+  /** 그룹 관리자를 다른 멤버로 변경 (현재 관리자는 일반 멤버로 강등) */
+  static Future<void> changeGroupAdmin(
+      String groupId, String newAdminUserId, String currentUserId) async {
+    await _db
+        .from('group_members')
+        .update({'role': 'admin'})
+        .eq('group_id', groupId)
+        .eq('user_id', newAdminUserId);
+    await _db
+        .from('group_members')
+        .update({'role': 'member'})
+        .eq('group_id', groupId)
+        .eq('user_id', currentUserId);
+  }
 }
