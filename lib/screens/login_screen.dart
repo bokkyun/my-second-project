@@ -29,10 +29,14 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await AuthService.signIn(_usernameCtrl.text.trim(), _passwordCtrl.text);
       if (mounted) context.go('/calendar');
-    } on AuthException {
-      setState(() => _error = '아이디 또는 비밀번호가 올바르지 않습니다.');
-    } catch (_) {
-      setState(() => _error = '로그인 중 오류가 발생했습니다.');
+    } on AuthException catch (e) {
+      setState(() => _error = e.message.contains('email_not_confirmed')
+          ? '이메일 인증이 필요합니다. 관리자에게 문의하세요.'
+          : e.message.contains('Invalid login credentials')
+              ? '아이디 또는 비밀번호가 올바르지 않습니다.'
+              : '로그인 오류: ${e.message}');
+    } catch (e) {
+      setState(() => _error = '연결 오류: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
