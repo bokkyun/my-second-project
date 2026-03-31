@@ -201,13 +201,3 @@ class _GroupCreateScreenState extends State<GroupCreateScreen> {
     );
   }
 }
-: Colors.white))
-                    : const Text('그룹 생성', style: TextStyle(fontSize: 16)),
-              ),
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
-}
