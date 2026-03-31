@@ -34,7 +34,7 @@ class GroupService {
   static Future<List<Map<String, dynamic>>> searchGroups(String query) async {
     final res = await _db
         .from('groups')
-        .select()
+        .select('id, name, description, color, is_searchable, created_by')
         .eq('is_searchable', true)
         .ilike('name', '%$query%');
     return (res as List).cast<Map<String, dynamic>>();
@@ -46,6 +46,7 @@ class GroupService {
     required String description,
     required String color,
     required bool isSearchable,
+    required String password,
   }) async {
     final group = await _db
         .from('groups')
@@ -55,6 +56,7 @@ class GroupService {
           'color': color,
           'is_searchable': isSearchable,
           'created_by': userId,
+          'password': password,
         })
         .select()
         .single();
@@ -65,7 +67,16 @@ class GroupService {
     });
   }
 
-  static Future<void> joinGroup(String groupId, String userId) async {
+  static Future<void> joinGroup(String groupId, String userId, String password) async {
+    final verify = await _db
+        .from('groups')
+        .select('id')
+        .eq('id', groupId)
+        .eq('password', password)
+        .maybeSingle();
+    if (verify == null) {
+      throw Exception('비밀번호가 틀렸습니다.');
+    }
     await _db.from('group_members').insert({
       'group_id': groupId,
       'user_id': userId,
@@ -85,6 +96,15 @@ class GroupService {
     await _db
         .from('groups')
         .delete()
+        .eq('id', groupId)
+        .eq('created_by', userId);
+  }
+
+  /** 그룹 비밀번호 변경 (관리자만 가능) */
+  static Future<void> changeGroupPassword(String groupId, String userId, String newPassword) async {
+    await _db
+        .from('groups')
+        .update({'password': newPassword})
         .eq('id', groupId)
         .eq('created_by', userId);
   }

@@ -14,15 +14,18 @@ class GroupCreateScreen extends StatefulWidget {
 class _GroupCreateScreenState extends State<GroupCreateScreen> {
   final _nameCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
+  final _pwCtrl = TextEditingController();
   Color _color = const Color(0xFF1976D2);
   bool _isSearchable = false;
   bool _loading = false;
+  bool _showPw = false;
   String _error = '';
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _descCtrl.dispose();
+    _pwCtrl.dispose();
     super.dispose();
   }
 
@@ -52,6 +55,10 @@ class _GroupCreateScreenState extends State<GroupCreateScreen> {
       setState(() => _error = '그룹 이름을 입력해주세요.');
       return;
     }
+    if (_pwCtrl.text.trim().isEmpty) {
+      setState(() => _error = '그룹 비밀번호를 입력해주세요.');
+      return;
+    }
     setState(() { _error = ''; _loading = true; });
     try {
       final userId = Supabase.instance.client.auth.currentUser!.id;
@@ -61,6 +68,7 @@ class _GroupCreateScreenState extends State<GroupCreateScreen> {
         description: _descCtrl.text.trim(),
         color: _colorToHex(_color),
         isSearchable: _isSearchable,
+        password: _pwCtrl.text.trim(),
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -110,6 +118,21 @@ class _GroupCreateScreenState extends State<GroupCreateScreen> {
               decoration: const InputDecoration(labelText: '설명 (선택)', counterText: ''),
               maxLines: 3,
               maxLength: 100,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _pwCtrl,
+              obscureText: !_showPw,
+              decoration: InputDecoration(
+                labelText: '그룹 비밀번호 *',
+                helperText: '가입 시 이 비밀번호를 입력해야 합니다.',
+                counterText: '',
+                suffixIcon: IconButton(
+                  icon: Icon(_showPw ? Icons.visibility_off : Icons.visibility),
+                  onPressed: () => setState(() => _showPw = !_showPw),
+                ),
+              ),
+              maxLength: 30,
             ),
             const SizedBox(height: 20),
 

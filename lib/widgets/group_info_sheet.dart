@@ -7,6 +7,7 @@ class GroupInfoSheet extends StatefulWidget {
   final Future<void> Function(String groupId) onLeave;
   final Future<void> Function(String groupId) onDelete;
   final Future<void> Function(String groupId, String newAdminUserId)? onChangeAdmin;
+  final Future<void> Function(String groupId, String newPassword)? onChangePassword;
 
   const GroupInfoSheet({
     super.key,
@@ -14,6 +15,7 @@ class GroupInfoSheet extends StatefulWidget {
     required this.onLeave,
     required this.onDelete,
     this.onChangeAdmin,
+    this.onChangePassword,
   });
 
   @override
@@ -25,6 +27,16 @@ class _GroupInfoSheetState extends State<GroupInfoSheet> {
   bool _loading = true;
   bool _changeAdminMode = false;
   String? _selectedNewAdminId;
+  bool _changePwMode = false;
+  final _newPwCtrl = TextEditingController();
+  bool _showNewPw = false;
+  bool _changingPw = false;
+
+  @override
+  void dispose() {
+    _newPwCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -87,6 +99,66 @@ class _GroupInfoSheetState extends State<GroupInfoSheet> {
       Navigator.pop(context);
       await action();
     }
+  }
+
+  Future<void> _handleChangePassword() async {
+    final pw = _newPwCtrl.text.trim();
+    if (pw.isEmpty) return;
+    setState(() => _changingPw = true);
+    try {
+      await widget.onChangePassword!(widget.group.id, pw);
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('비밀번호가 변경되었습니다.')));
+      }
+    } finally {
+      if (mounted) setState(() => _changingPw = false);
+    }
+  }
+
+  Widget _buildChangePwPanel() {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('새 비밀번호 입력', style: TextStyle(fontWeight: FontWeight.w600)),
+      const SizedBox(height: 4),
+      const Text('변경 후 가입 시 새 비밀번호가 적용됩니다.',
+          style: TextStyle(fontSize: 12, color: Colors.grey)),
+      const SizedBox(height: 12),
+      StatefulBuilder(
+        builder: (_, setInner) => TextField(
+          controller: _newPwCtrl,
+          obscureText: !_showNewPw,
+          decoration: InputDecoration(
+            labelText: '새 비밀번호',
+            border: const OutlineInputBorder(),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            suffixIcon: IconButton(
+              icon: Icon(_showNewPw ? Icons.visibility_off : Icons.visibility),
+              onPressed: () => setState(() => _showNewPw = !_showNewPw),
+            ),
+          ),
+          maxLength: 30,
+        ),
+      ),
+      const SizedBox(height: 12),
+      Row(children: [
+        Expanded(
+          child: OutlinedButton(
+            onPressed: () => setState(() { _changePwMode = false; _newPwCtrl.clear(); }),
+            child: const Text('취소'),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: ElevatedButton(
+            onPressed: _changingPw ? null : _handleChangePassword,
+            child: _changingPw
+                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('변경'),
+          ),
+        ),
+      ]),
+    ]);
   }
 
   Widget _buildChangeAdminPanel() {
@@ -218,50 +290,75 @@ class _GroupInfoSheetState extends State<GroupInfoSheet> {
           padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + MediaQuery.of(context).padding.bottom),
           child: _changeAdminMode
               ? _buildChangeAdminPanel()
-              : Row(children: [
-                  if (group.myRole == 'admin') ...[
-                    if (widget.onChangeAdmin != null && _members.any((m) => m['role'] != 'admin'))
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => setState(() { _changeAdminMode = true; _selectedNewAdminId = null; }),
-                          icon: const Icon(Icons.admin_panel_settings, size: 18),
-                          label: const Text('관리자 변경'),
-                        ),
-                      ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _confirmAction(
-                          '그룹 삭제',
-                          '${group.name} 그룹을 삭제하면 복구할 수 없습니다.',
-                          () => widget.onDelete(group.id),
-                        ),
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        label: const Text('그룹 삭제', style: TextStyle(color: Colors.red)),
-                        style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.red)),
-                      ),
-                    ),
-                  ] else
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _confirmAction(
-                          '그룹 탈퇴',
-                          '${group.name} 그룹에서 탈퇴하시겠습니까?',
-                          () => widget.onLeave(group.id),
-                        ),
-                        icon: const Icon(Icons.exit_to_app, color: Colors.red),
-                        label: const Text('그룹 탈퇴', style: TextStyle(color: Colors.red)),
-                        style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.red)),
-                      ),
-                    ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('닫기'),
-                    ),
-                  ),
-                ]),
+              : _changePwMode
+                  ? _buildChangePwPanel()
+                  : Column(mainAxisSize: MainAxisSize.min, children: [
+                      if (group.myRole == 'admin') ...[
+                        Row(children: [
+                          if (widget.onChangeAdmin != null && _members.any((m) => m['role'] != 'admin'))
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () => setState(() { _changeAdminMode = true; _selectedNewAdminId = null; }),
+                                icon: const Icon(Icons.admin_panel_settings, size: 18),
+                                label: const Text('관리자 변경'),
+                              ),
+                            ),
+                          if (widget.onChangeAdmin != null && _members.any((m) => m['role'] != 'admin'))
+                            const SizedBox(width: 8),
+                          if (widget.onChangePassword != null)
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () => setState(() { _changePwMode = true; _newPwCtrl.clear(); }),
+                                icon: const Icon(Icons.lock_outline, size: 18),
+                                label: const Text('비밀번호 변경'),
+                              ),
+                            ),
+                        ]),
+                        const SizedBox(height: 8),
+                        Row(children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _confirmAction(
+                                '그룹 삭제',
+                                '${group.name} 그룹을 삭제하면 복구할 수 없습니다.',
+                                () => widget.onDelete(group.id),
+                              ),
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              label: const Text('그룹 삭제', style: TextStyle(color: Colors.red)),
+                              style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.red)),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('닫기'),
+                            ),
+                          ),
+                        ]),
+                      ] else
+                        Row(children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _confirmAction(
+                                '그룹 탈퇴',
+                                '${group.name} 그룹에서 탈퇴하시겠습니까?',
+                                () => widget.onLeave(group.id),
+                              ),
+                              icon: const Icon(Icons.exit_to_app, color: Colors.red),
+                              label: const Text('그룹 탈퇴', style: TextStyle(color: Colors.red)),
+                              style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.red)),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('닫기'),
+                            ),
+                          ),
+                        ]),
+                    ]),
         ),
       ]),
     );

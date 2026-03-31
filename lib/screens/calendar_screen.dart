@@ -206,6 +206,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
           if (mounted) ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('관리자가 변경되었습니다.')));
         },
+        onChangePassword: (gid, newPassword) async {
+          await GroupService.changeGroupPassword(gid, AuthService.currentUser!.id, newPassword);
+        },
       ),
     );
   }
