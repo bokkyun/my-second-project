@@ -140,6 +140,16 @@ class _GroupCreateScreenState extends State<GroupCreateScreen> {
               ),
               maxLength: 30,
             ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _pwConfirmCtrl,
+              obscureText: !_showPw,
+              decoration: const InputDecoration(
+                labelText: '비밀번호 확인 *',
+                counterText: '',
+              ),
+              maxLength: 30,
+            ),
             const SizedBox(height: 20),
 
             const Text('그룹 색상', style: TextStyle(fontWeight: FontWeight.w600)),
