@@ -15,6 +15,7 @@ class _GroupCreateScreenState extends State<GroupCreateScreen> {
   final _nameCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   final _pwCtrl = TextEditingController();
+  final _pwConfirmCtrl = TextEditingController();
   Color _color = const Color(0xFF1976D2);
   bool _isSearchable = false;
   bool _loading = false;
@@ -26,6 +27,7 @@ class _GroupCreateScreenState extends State<GroupCreateScreen> {
     _nameCtrl.dispose();
     _descCtrl.dispose();
     _pwCtrl.dispose();
+    _pwConfirmCtrl.dispose();
     super.dispose();
   }
 
@@ -57,6 +59,10 @@ class _GroupCreateScreenState extends State<GroupCreateScreen> {
     }
     if (_pwCtrl.text.trim().isEmpty) {
       setState(() => _error = '그룹 비밀번호를 입력해주세요.');
+      return;
+    }
+    if (_pwCtrl.text.trim() != _pwConfirmCtrl.text.trim()) {
+      setState(() => _error = '비밀번호가 일치하지 않습니다.');
       return;
     }
     setState(() { _error = ''; _loading = true; });
@@ -176,6 +182,16 @@ class _GroupCreateScreenState extends State<GroupCreateScreen> {
                 ),
                 child: _loading
                     ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('그룹 생성', style: TextStyle(fontSize: 16)),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+: Colors.white))
                     : const Text('그룹 생성', style: TextStyle(fontSize: 16)),
               ),
             ),
