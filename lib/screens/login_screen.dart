@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -36,17 +38,18 @@ class _LoginScreenState extends State<LoginScreen> {
       _loading = true;
     });
     try {
-      final res = await AuthService.signIn(username, password);
+      final res = await AuthService.signIn(username, password).timeout(
+        const Duration(seconds: 25),
+        onTimeout: () => throw TimeoutException('signIn'),
+      );
       if (res.session == null) {
         setState(() => _error = '로그인에 실패했습니다. 이메일 인증이 필요하거나 세션이 없습니다.');
         return;
       }
       if (!mounted) return;
-      // redirect가 최신 세션을 보도록 한 뒤 캘린더로 이동 (로그인 화면에 머무는 현상 방지)
-      GoRouter.of(context).refresh();
-      await Future<void>.delayed(Duration.zero);
-      if (!mounted) return;
       context.go('/calendar');
+    } on TimeoutException {
+      setState(() => _error = '서버 응답이 없습니다. 인터넷 연결을 확인한 뒤 다시 시도해주세요.');
     } on AuthException catch (e) {
       final msg = e.message.toLowerCase();
       setState(() => _error = msg.contains('email_not_confirmed') ||

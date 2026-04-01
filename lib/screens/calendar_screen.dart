@@ -59,24 +59,44 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Future<void> _loadGroups() async {
-    final groups = await GroupService.fetchMyGroups(AuthService.currentUser!.id);
-    if (mounted) {
-      setState(() {
-        _groups = groups;
-        _visibleGroupIds = groups.map((g) => g.id).toSet();
-        _loadingGroups = false;
-      });
+    try {
+      final groups = await GroupService.fetchMyGroups(AuthService.currentUser!.id);
+      if (mounted) {
+        setState(() {
+          _groups = groups;
+          _visibleGroupIds = groups.map((g) => g.id).toSet();
+          _loadingGroups = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _groups = [];
+          _loadingGroups = false;
+        });
+      }
     }
   }
 
   Future<void> _loadEvents() async {
     setState(() => _loadingEvents = true);
-    final events = await EventService.fetchEvents(
-        AuthService.currentUser!.id, _visibleGroupIds.toList());
-    if (mounted) {
-      setState(() { _events = events; _loadingEvents = false; });
-      /** 오늘 일정 알림 예약 */
-      await NotificationService.scheduleTodayEvents(events);
+    try {
+      final events = await EventService.fetchEvents(
+          AuthService.currentUser!.id, _visibleGroupIds.toList());
+      if (mounted) {
+        setState(() {
+          _events = events;
+          _loadingEvents = false;
+        });
+        await NotificationService.scheduleTodayEvents(events);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _events = [];
+          _loadingEvents = false;
+        });
+      }
     }
   }
 
