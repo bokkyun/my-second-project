@@ -242,6 +242,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   const SizedBox(height: 16),
 
+                  // 약관 · 개인정보
+                  Card(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    child: Column(
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.privacy_tip_outlined),
+                          title: const Text('개인정보처리방침'),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => context.push('/privacy'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
                   // 로그아웃
                   Card(
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

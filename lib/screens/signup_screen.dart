@@ -188,6 +188,32 @@ class _SignupScreenState extends State<SignupScreen> {
               : const Text('회원가입', style: TextStyle(fontSize: 16)),
         ),
       ),
+      const SizedBox(height: 12),
+      Wrap(
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 4,
+        children: [
+          Text('비밀번호를 잊으셨나요?', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[700])),
+          TextButton(
+            onPressed: () => context.go('/reset-password'),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text('비밀번호 재설정', style: TextStyle(fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      TextButton(
+        onPressed: () => context.push('/privacy'),
+        child: Text(
+          '개인정보처리방침',
+          style: TextStyle(fontSize: 13, color: Colors.grey[600], fontWeight: FontWeight.w500),
+        ),
+      ),
     ]);
   }
 }

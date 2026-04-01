@@ -25,9 +25,22 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _submit() async {
-    setState(() { _error = ''; _loading = true; });
+    final username = _usernameCtrl.text.trim();
+    final password = _passwordCtrl.text;
+    if (username.isEmpty || password.isEmpty) {
+      setState(() => _error = '아이디와 비밀번호를 입력해주세요.');
+      return;
+    }
+    setState(() {
+      _error = '';
+      _loading = true;
+    });
     try {
-      await AuthService.signIn(_usernameCtrl.text.trim(), _passwordCtrl.text);
+      final res = await AuthService.signIn(username, password);
+      if (res.session == null) {
+        setState(() => _error = '로그인에 실패했습니다. 잠시 후 다시 시도해주세요.');
+        return;
+      }
       if (mounted) context.go('/calendar');
     } on AuthException catch (e) {
       setState(() => _error = e.message.contains('email_not_confirmed')
@@ -125,7 +138,14 @@ class _LoginScreenState extends State<LoginScreen> {
                               : const Text('로그인', style: TextStyle(fontSize: 16)),
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () => context.go('/reset-password'),
+                          child: const Text('비밀번호를 잊으셨나요?', style: TextStyle(fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
                       const Divider(),
                       const SizedBox(height: 12),
                       Row(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -135,6 +155,14 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: const Text('회원가입', style: TextStyle(fontWeight: FontWeight.bold)),
                         ),
                       ]),
+                      const SizedBox(height: 4),
+                      TextButton(
+                        onPressed: () => context.push('/privacy'),
+                        child: Text(
+                          '개인정보처리방침',
+                          style: TextStyle(fontSize: 13, color: Colors.grey[600], fontWeight: FontWeight.w500),
+                        ),
+                      ),
                     ],
                   ),
                 ),
