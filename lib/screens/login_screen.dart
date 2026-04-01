@@ -42,7 +42,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
     _clearLoadingWatchdog();
-    _loadingWatchdog = Timer(const Duration(seconds: 32), () {
+    _loadingWatchdog = Timer(const Duration(seconds: 28), () {
       if (!mounted) return;
       setState(() {
         _loading = false;
@@ -57,7 +57,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
     try {
       final res = await AuthService.signIn(username, password).timeout(
-        const Duration(seconds: 25),
+        const Duration(seconds: 22),
         onTimeout: () => throw TimeoutException('signIn'),
       );
       if (res.session == null) {
