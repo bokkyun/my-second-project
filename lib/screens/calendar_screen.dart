@@ -39,13 +39,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Future<void> _loadProfile() async {
-    final userId = AuthService.currentUser!.id;
-    final p = await Supabase.instance.client
-        .from('profiles')
-        .select('nickname')
-        .eq('id', userId)
-        .single();
-    if (mounted) setState(() => _nickname = p['nickname'] as String?);
+    final user = AuthService.currentUser;
+    if (user == null) return;
+    try {
+      final p = await Supabase.instance.client
+          .from('profiles')
+          .select('nickname')
+          .eq('id', user.id)
+          .maybeSingle();
+      if (mounted) setState(() => _nickname = p?['nickname'] as String?);
+    } catch (_) {
+      if (mounted) setState(() => _nickname = null);
+    }
   }
 
   Future<void> _loadAll() async {

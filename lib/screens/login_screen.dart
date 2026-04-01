@@ -38,14 +38,21 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final res = await AuthService.signIn(username, password);
       if (res.session == null) {
-        setState(() => _error = '로그인에 실패했습니다. 잠시 후 다시 시도해주세요.');
+        setState(() => _error = '로그인에 실패했습니다. 이메일 인증이 필요하거나 세션이 없습니다.');
         return;
       }
-      if (mounted) context.go('/calendar');
+      if (!mounted) return;
+      // redirect가 최신 세션을 보도록 한 뒤 캘린더로 이동 (로그인 화면에 머무는 현상 방지)
+      GoRouter.of(context).refresh();
+      await Future<void>.delayed(Duration.zero);
+      if (!mounted) return;
+      context.go('/calendar');
     } on AuthException catch (e) {
-      setState(() => _error = e.message.contains('email_not_confirmed')
+      final msg = e.message.toLowerCase();
+      setState(() => _error = msg.contains('email_not_confirmed') ||
+              msg.contains('email not confirmed')
           ? '이메일 인증이 필요합니다. 관리자에게 문의하세요.'
-          : e.message.contains('Invalid login credentials')
+          : msg.contains('invalid login') || msg.contains('invalid credentials')
               ? '아이디 또는 비밀번호가 올바르지 않습니다.'
               : '로그인 오류: ${e.message}');
     } catch (e) {

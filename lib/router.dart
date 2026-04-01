@@ -26,7 +26,10 @@ void setupAppRouter() {
     redirect: (context, state) {
       final session = Supabase.instance.client.auth.currentSession;
       final isAuth = session != null;
-      final path = state.matchedLocation;
+      // matchedLocation이 비는 경우가 있어 uri.path를 함께 사용
+      final path = state.uri.path.isNotEmpty
+          ? state.uri.path
+          : state.matchedLocation;
       final isLoginOrSignup = path == '/login' || path == '/signup';
       final isResetFlow = path == '/reset-password' || path == '/update-password';
       final isPrivacy = path == '/privacy';
