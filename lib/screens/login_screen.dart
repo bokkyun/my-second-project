@@ -18,21 +18,39 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _showPassword = false;
   bool _loading = false;
   String _error = '';
+  Timer? _loadingWatchdog;
 
   @override
   void dispose() {
+    _loadingWatchdog?.cancel();
     _usernameCtrl.dispose();
     _passwordCtrl.dispose();
     super.dispose();
   }
 
+  void _clearLoadingWatchdog() {
+    _loadingWatchdog?.cancel();
+    _loadingWatchdog = null;
+  }
+
   Future<void> _submit() async {
+    if (_loading) return;
     final username = _usernameCtrl.text.trim();
     final password = _passwordCtrl.text;
     if (username.isEmpty || password.isEmpty) {
       setState(() => _error = '아이디와 비밀번호를 입력해주세요.');
       return;
     }
+    _clearLoadingWatchdog();
+    _loadingWatchdog = Timer(const Duration(seconds: 32), () {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        if (_error.isEmpty) {
+          _error = '요청이 너무 오래 걸립니다. 네트워크를 확인하거나 앱을 다시 실행해주세요.';
+        }
+      });
+    });
     setState(() {
       _error = '';
       _loading = true;
@@ -61,6 +79,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       setState(() => _error = '연결 오류: $e');
     } finally {
+      _clearLoadingWatchdog();
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -140,11 +159,26 @@ class _LoginScreenState extends State<LoginScreen> {
 
                       SizedBox(
                         width: double.infinity,
+                        height: 48,
                         child: ElevatedButton(
+                          // 로딩 중에도 비활성 회색 스타일이 되지 않도록 색 유지 (작은 흰 점처럼 보이는 현상 완화)
                           onPressed: _loading ? null : _submit,
-                          style: ElevatedButton.styleFrom(backgroundColor: cs.primary, foregroundColor: cs.onPrimary),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: cs.primary,
+                            foregroundColor: cs.onPrimary,
+                            disabledBackgroundColor: cs.primary,
+                            disabledForegroundColor: cs.onPrimary,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
                           child: _loading
-                              ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              ? SizedBox(
+                                  width: 26,
+                                  height: 26,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    color: cs.onPrimary,
+                                  ),
+                                )
                               : const Text('로그인', style: TextStyle(fontSize: 16)),
                         ),
                       ),
