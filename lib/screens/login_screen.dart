@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
+import '../utils/network_messages.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -69,15 +70,21 @@ class _LoginScreenState extends State<LoginScreen> {
     } on TimeoutException {
       setState(() => _error = '서버 응답이 없습니다. 인터넷 연결을 확인한 뒤 다시 시도해주세요.');
     } on AuthException catch (e) {
-      final msg = e.message.toLowerCase();
-      setState(() => _error = msg.contains('email_not_confirmed') ||
-              msg.contains('email not confirmed')
-          ? '이메일 인증이 필요합니다. 관리자에게 문의하세요.'
-          : msg.contains('invalid login') || msg.contains('invalid credentials')
-              ? '아이디 또는 비밀번호가 올바르지 않습니다.'
-              : '로그인 오류: ${e.message}');
+      final networkMsg = friendlyNetworkMessage(e.message);
+      if (networkMsg != null) {
+        setState(() => _error = networkMsg);
+      } else {
+        final msg = e.message.toLowerCase();
+        setState(() => _error = msg.contains('email_not_confirmed') ||
+                msg.contains('email not confirmed')
+            ? '이메일 인증이 필요합니다. 관리자에게 문의하세요.'
+            : msg.contains('invalid login') || msg.contains('invalid credentials')
+                ? '아이디 또는 비밀번호가 올바르지 않습니다.'
+                : '로그인 오류: ${e.message}');
+      }
     } catch (e) {
-      setState(() => _error = '연결 오류: $e');
+      final networkMsg = friendlyNetworkMessage(e.toString());
+      setState(() => _error = networkMsg ?? '연결 오류: $e');
     } finally {
       _clearLoadingWatchdog();
       if (mounted) setState(() => _loading = false);

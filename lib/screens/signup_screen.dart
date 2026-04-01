@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
+import '../utils/network_messages.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -55,11 +56,15 @@ class _SignupScreenState extends State<SignupScreen> {
       await AuthService.signUp(username, password, nickname);
       if (mounted) setState(() { _success = true; _loading = false; });
     } on AuthException catch (e) {
-      String msg = '회원가입에 실패했습니다. 다시 시도해주세요.';
-      if (e.message.contains('already registered')) msg = '이미 사용 중인 아이디입니다.';
+      final net = friendlyNetworkMessage(e.message);
+      String msg = net ??
+          (e.message.contains('already registered')
+              ? '이미 사용 중인 아이디입니다.'
+              : '회원가입에 실패했습니다. 다시 시도해주세요.');
       setState(() { _error = msg; _loading = false; });
     } catch (e) {
-      setState(() { _error = '오류: $e'; _loading = false; });
+      final net = friendlyNetworkMessage(e.toString());
+      setState(() { _error = net ?? '오류: $e'; _loading = false; });
     }
   }
 
