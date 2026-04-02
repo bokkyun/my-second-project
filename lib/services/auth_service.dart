@@ -1,9 +1,31 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// 아이디 → Supabase 이메일 변환 (웹과 동일한 방식)
 String toEmail(String username) =>
     '${username.trim().toLowerCase()}@teamsync.local';
+
+bool _isRetryableNetworkError(Object e) {
+  if (e is TimeoutException) return true;
+  final msg = e.toString().toLowerCase();
+  if (msg.contains('failed host lookup') ||
+      msg.contains('no address associated with hostname') ||
+      msg.contains('socketexception') ||
+      msg.contains('clientexception') ||
+      msg.contains('connection reset') ||
+      msg.contains('network is unreachable')) {
+    return true;
+  }
+  if (e is AuthException) {
+    final m = e.message.toLowerCase();
+    return m.contains('failed host lookup') ||
+        m.contains('socketexception') ||
+        m.contains('network');
+  }
+  return false;
+}
 
 class AuthService {
   static final _client = Supabase.instance.client;
@@ -17,11 +39,24 @@ class AuthService {
     return null;
   }
 
-  static Future<AuthResponse> signIn(String username, String password) {
-    return _client.auth.signInWithPassword(
-      email: toEmail(username),
-      password: password,
-    );
+  /// DNS 일시 실패 등에 대비해 짧게 재시도합니다.
+  static Future<AuthResponse> signIn(String username, String password) async {
+    const maxAttempts = 3;
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        return await _client.auth.signInWithPassword(
+          email: toEmail(username),
+          password: password,
+        );
+      } catch (e) {
+        if (attempt < maxAttempts - 1 && _isRetryableNetworkError(e)) {
+          await Future<void>.delayed(Duration(milliseconds: 350 * (attempt + 1)));
+          continue;
+        }
+        rethrow;
+      }
+    }
+    throw StateError('AuthService.signIn: unreachable');
   }
 
   static Future<AuthResponse> signUp(

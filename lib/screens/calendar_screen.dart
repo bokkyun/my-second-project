@@ -9,6 +9,7 @@ import '../services/auth_service.dart';
 import '../services/event_service.dart';
 import '../services/group_service.dart';
 import '../services/notification_service.dart';
+import '../services/schedule_voice_assistant.dart';
 import '../widgets/event_form_sheet.dart';
 import '../widgets/event_detail_sheet.dart';
 import '../widgets/group_info_sheet.dart';
@@ -29,6 +30,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   String? _nickname;
   bool _loadingGroups = true;
   bool _loadingEvents = true;
+  bool _voiceBusy = false;
 
   @override
   void initState() {
@@ -206,6 +208,52 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
+  Future<void> _onVoiceSchedule() async {
+    if (_voiceBusy || _loadingEvents) return;
+    setState(() => _voiceBusy = true);
+    try {
+      await ScheduleVoiceAssistant.stopSpeaking();
+      final speechOk = await ScheduleVoiceAssistant.initSpeech();
+      if (!speechOk) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('음성 인식을 쓸 수 없습니다. 설정에서 마이크 권한을 허용해 주세요.')),
+          );
+        }
+        return;
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('듣고 있습니다… "오늘 일정 알려줘"처럼 말씀해 주세요.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      final heard = await ScheduleVoiceAssistant.listenOnce();
+      if (!mounted) return;
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final targetDay =
+          ScheduleVoiceAssistant.resolveTargetDay(heard, now: now) ?? today;
+
+      final events = _eventsForDay(targetDay);
+      final script = heard.isEmpty
+          ? '음성을 인식하지 못했습니다. ${ScheduleVoiceAssistant.buildSpokenSummary(events, targetDay)}'
+          : ScheduleVoiceAssistant.buildSpokenSummary(events, targetDay);
+
+      await ScheduleVoiceAssistant.speak(script);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('음성 안내 중 문제가 발생했습니다.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _voiceBusy = false);
+    }
+  }
+
   void _openGroupInfo(Group group) {
     showModalBottomSheet(
       context: context,
@@ -375,9 +423,33 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     ),
         ),
       ]),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _openEventForm(date: _selectedDay),
-        child: const Icon(Icons.add),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FloatingActionButton.small(
+            heroTag: 'voice_schedule',
+            tooltip: '오늘·내일 일정 음성 안내',
+            onPressed: _voiceBusy ? null : _onVoiceSchedule,
+            child: _voiceBusy
+                ? SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Theme.of(context).colorScheme.onPrimary,
+                    ),
+                  )
+                : const Icon(Icons.mic),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton(
+            heroTag: 'add_event',
+            tooltip: '일정 추가',
+            onPressed: () => _openEventForm(date: _selectedDay),
+            child: const Icon(Icons.add),
+          ),
+        ],
       ),
     );
   }
