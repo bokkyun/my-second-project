@@ -9,13 +9,21 @@ import '../services/auth_service.dart';
 import '../services/event_service.dart';
 import '../services/group_service.dart';
 import '../services/notification_service.dart';
-import '../services/schedule_voice_assistant.dart';
+import '../services/push_messaging_service.dart';
+import '../services/widget_sync_service.dart';
 import '../widgets/event_form_sheet.dart';
 import '../widgets/event_detail_sheet.dart';
+import '../widgets/group_event_form_sheet.dart';
 import '../widgets/group_info_sheet.dart';
 
 class CalendarScreen extends StatefulWidget {
-  const CalendarScreen({super.key});
+  const CalendarScreen({
+    super.key,
+    this.initialOpenEventId,
+  });
+
+  /// 그룹 일정 푸시 등으로 특정 일정 열기
+  final String? initialOpenEventId;
 
   @override
   State<CalendarScreen> createState() => _CalendarScreenState();
@@ -30,12 +38,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
   String? _nickname;
   bool _loadingGroups = true;
   bool _loadingEvents = true;
-  bool _voiceBusy = false;
+  String? _pendingEventId;
 
   @override
   void initState() {
     super.initState();
     _selectedDay = DateTime.now();
+    _pendingEventId = widget.initialOpenEventId;
     _loadAll();
     _loadProfile();
   }
@@ -91,12 +100,45 @@ class _CalendarScreenState extends State<CalendarScreen> {
           _loadingEvents = false;
         });
         await NotificationService.scheduleTodayEvents(events);
+        await WidgetSyncService.syncTodayEvents(events);
+        await _runPendingNotificationActions();
       }
     } catch (_) {
       if (mounted) {
         setState(() {
           _events = [];
           _loadingEvents = false;
+        });
+        await WidgetSyncService.syncTodayEvents([]);
+        await NotificationService.scheduleDailySummaryFromPrefs([]);
+        await _runPendingNotificationActions();
+      }
+    }
+  }
+
+  /// 알림 딥링크: 데이터 로드 후 상세 표시
+  Future<void> _runPendingNotificationActions() async {
+    if (!mounted) return;
+
+    final eventId = _pendingEventId;
+    if (eventId != null) {
+      _pendingEventId = null;
+      CalendarEvent? ev;
+      for (final e in _events) {
+        if (e.id == eventId) {
+          ev = e;
+          break;
+        }
+      }
+      ev ??= await EventService.fetchEventById(eventId);
+      if (!mounted) return;
+      context.go('/calendar');
+      final toShow = ev;
+      if (toShow != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _openEventDetail(toShow);
+          }
         });
       }
     }
@@ -111,12 +153,66 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }).toList();
   }
 
-  /** 이벤트에 대해 현재 유저가 그룹 관리자인지 확인 */
+  /// 이벤트에 대해 현재 유저가 그룹 관리자인지 확인
   bool _isAdminOfEvent(CalendarEvent event) {
     if (event.creatorId == AuthService.currentUser!.id) return false;
     return event.groupIds.any(
       (gid) => _groups.any((g) => g.id == gid && g.myRole == 'admin'),
     );
+  }
+
+  void _showAddMenu() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(Icons.event, color: Theme.of(context).colorScheme.primary),
+              title: const Text('일정 추가'),
+              subtitle: const Text('나만 또는 선택한 그룹에 공유'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _openEventForm(date: _selectedDay);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.groups, color: Theme.of(context).colorScheme.secondary),
+              title: const Text('그룹 이벤트 만들기'),
+              subtitle: const Text('선택한 그룹의 모든 구성원 캘린더에 등록 · 푸시 알림'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _openGroupEventForm();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openGroupEventForm() {
+    if (_groups.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('먼저 그룹에 참여해 주세요.')),
+      );
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => GroupEventFormSheet(
+        groups: _groups,
+        defaultDate: _selectedDay,
+      ),
+    ).then((_) {
+      if (mounted) {
+        _loadEvents();
+      }
+    });
   }
 
   void _openEventForm({DateTime? date, CalendarEvent? editEvent}) {
@@ -135,7 +231,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         groups: _groups,
         adminGroupIds: editEvent == null ? adminGroupIds : const {},
         onFetchMembers: editEvent == null ? GroupService.fetchGroupMembers : null,
-        onSave: ({required title, description, required startsAt, required endsAt, required isAllDay, required color, required groupIds, String? targetUserId}) async {
+        onSave: ({required title, description, required startsAt, required endsAt, required isAllDay, required color, required groupIds, String? targetUserId, required eventKind}) async {
           final currentUserId = AuthService.currentUser!.id;
           if (editEvent != null) {
             await EventService.updateEvent(
@@ -144,6 +240,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               startsAt: startsAt, endsAt: endsAt,
               isAllDay: isAllDay, color: color, groupIds: groupIds,
               isAdminOverride: _isAdminOfEvent(editEvent),
+              eventKind: eventKind,
             );
           } else {
             final creatorId = targetUserId ?? currentUserId;
@@ -151,6 +248,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               userId: creatorId, title: title, description: description,
               startsAt: startsAt, endsAt: endsAt,
               isAllDay: isAllDay, color: color, groupIds: groupIds,
+              eventKind: eventKind,
             );
           }
           await _loadEvents();
@@ -208,52 +306,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  Future<void> _onVoiceSchedule() async {
-    if (_voiceBusy || _loadingEvents) return;
-    setState(() => _voiceBusy = true);
-    try {
-      await ScheduleVoiceAssistant.stopSpeaking();
-      final speechOk = await ScheduleVoiceAssistant.initSpeech();
-      if (!speechOk) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('음성 인식을 쓸 수 없습니다. 설정에서 마이크 권한을 허용해 주세요.')),
-          );
-        }
-        return;
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('듣고 있습니다… "오늘 일정 알려줘"처럼 말씀해 주세요.'),
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
-      final heard = await ScheduleVoiceAssistant.listenOnce();
-      if (!mounted) return;
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      final targetDay =
-          ScheduleVoiceAssistant.resolveTargetDay(heard, now: now) ?? today;
-
-      final events = _eventsForDay(targetDay);
-      final script = heard.isEmpty
-          ? '음성을 인식하지 못했습니다. ${ScheduleVoiceAssistant.buildSpokenSummary(events, targetDay)}'
-          : ScheduleVoiceAssistant.buildSpokenSummary(events, targetDay);
-
-      await ScheduleVoiceAssistant.speak(script);
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('음성 안내 중 문제가 발생했습니다.')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _voiceBusy = false);
-    }
-  }
-
   void _openGroupInfo(Group group) {
     showModalBottomSheet(
       context: context,
@@ -304,6 +356,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
             icon: const Icon(Icons.logout, color: Colors.red),
             tooltip: '로그아웃',
             onPressed: () async {
+              await PushMessagingService.clearTokenForLogout();
               await AuthService.signOut();
               if (mounted) context.go('/login');
             },
@@ -423,33 +476,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     ),
         ),
       ]),
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          FloatingActionButton.small(
-            heroTag: 'voice_schedule',
-            tooltip: '오늘·내일 일정 음성 안내',
-            onPressed: _voiceBusy ? null : _onVoiceSchedule,
-            child: _voiceBusy
-                ? SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Theme.of(context).colorScheme.onPrimary,
-                    ),
-                  )
-                : const Icon(Icons.mic),
-          ),
-          const SizedBox(height: 12),
-          FloatingActionButton(
-            heroTag: 'add_event',
-            tooltip: '일정 추가',
-            onPressed: () => _openEventForm(date: _selectedDay),
-            child: const Icon(Icons.add),
-          ),
-        ],
+      floatingActionButton: FloatingActionButton(
+        tooltip: '일정 · 그룹 이벤트',
+        onPressed: _showAddMenu,
+        child: const Icon(Icons.add),
       ),
     );
   }
@@ -479,9 +509,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
             const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()))
           else if (_groups.isEmpty)
             Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(children: [
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
                 const Text('속한 그룹이 없습니다.', style: TextStyle(color: Colors.grey)),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    context.push('/groups/create');
+                  },
+                  icon: const Icon(Icons.add_circle_outline),
+                  label: const Text('새 그룹 만들기'),
+                ),
                 const SizedBox(height: 8),
                 TextButton.icon(
                   onPressed: () { Navigator.pop(context); context.push('/groups/join'); },
@@ -540,6 +581,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
           const Spacer(),
           const Divider(height: 1),
+          ListTile(
+            leading: Icon(Icons.add_circle_outline, color: Theme.of(context).colorScheme.primary),
+            title: const Text('새 그룹 만들기'),
+            onTap: () { Navigator.pop(context); context.push('/groups/create'); },
+          ),
           ListTile(
             leading: const Icon(Icons.group_add),
             title: const Text('그룹 가입'),

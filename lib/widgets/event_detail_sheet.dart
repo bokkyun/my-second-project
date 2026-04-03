@@ -54,6 +54,16 @@ class EventDetailSheet extends StatelessWidget {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(event.title,
                 style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            if (event.isGroupEvent) ...[
+              const SizedBox(height: 6),
+              Chip(
+                label: const Text('그룹 이벤트', style: TextStyle(fontSize: 12)),
+                backgroundColor: event.flutterColor.withOpacity(0.2),
+                side: BorderSide(color: event.flutterColor.withOpacity(0.5)),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ],
             if (event.creatorNickname != null)
               Text('등록: ${event.creatorNickname}',
                   style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),

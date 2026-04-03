@@ -18,6 +18,8 @@ class _GroupCreateScreenState extends State<GroupCreateScreen> {
   final _pwConfirmCtrl = TextEditingController();
   Color _color = const Color(0xFF1976D2);
   bool _isSearchable = false;
+  /// 그룹원 일정 등록 시 푸시 수신 동의
+  bool _notifyGroupEvents = true;
   bool _loading = false;
   bool _showPw = false;
   String _error = '';
@@ -75,6 +77,7 @@ class _GroupCreateScreenState extends State<GroupCreateScreen> {
         color: _colorToHex(_color),
         isSearchable: _isSearchable,
         password: _pwCtrl.text.trim(),
+        notifyGroupEvents: _notifyGroupEvents,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -178,6 +181,13 @@ class _GroupCreateScreenState extends State<GroupCreateScreen> {
               subtitle: const Text('다른 사용자가 이 그룹을 검색할 수 있습니다'),
               value: _isSearchable,
               onChanged: (v) => setState(() => _isSearchable = v),
+              contentPadding: EdgeInsets.zero,
+            ),
+            SwitchListTile(
+              title: const Text('그룹 일정 푸시 알림'),
+              subtitle: const Text('다른 그룹원이 일정을 등록하면 알려받습니다(기기에 Firebase 설정 시).'),
+              value: _notifyGroupEvents,
+              onChanged: (v) => setState(() => _notifyGroupEvents = v),
               contentPadding: EdgeInsets.zero,
             ),
             const SizedBox(height: 28),

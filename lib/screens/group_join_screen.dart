@@ -36,23 +36,44 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
   Future<void> _openPasswordDialog(String groupId) async {
     _pwCtrl.clear();
     setState(() => _showPw = false);
+    var notifyOnJoin = true;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlgState) => AlertDialog(
           title: const Text('그룹 비밀번호 입력'),
-          content: TextField(
-            controller: _pwCtrl,
-            obscureText: !_showPw,
-            autofocus: true,
-            decoration: InputDecoration(
-              labelText: '비밀번호',
-              suffixIcon: IconButton(
-                icon: Icon(_showPw ? Icons.visibility_off : Icons.visibility),
-                onPressed: () => setDlgState(() => _showPw = !_showPw),
-              ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: _pwCtrl,
+                  obscureText: !_showPw,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    labelText: '비밀번호',
+                    suffixIcon: IconButton(
+                      icon: Icon(_showPw ? Icons.visibility_off : Icons.visibility),
+                      onPressed: () => setDlgState(() => _showPw = !_showPw),
+                    ),
+                  ),
+                  onSubmitted: (_) => Navigator.pop(ctx, true),
+                ),
+                const SizedBox(height: 8),
+                CheckboxListTile(
+                  value: notifyOnJoin,
+                  onChanged: (v) => setDlgState(() => notifyOnJoin = v ?? true),
+                  title: const Text('그룹 일정 푸시 알림'),
+                  subtitle: const Text(
+                    '그룹원이 일정을 등록하면 알려받습니다(기기에 Firebase 설정 시).',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ],
             ),
-            onSubmitted: (_) => Navigator.pop(ctx, true),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
@@ -62,15 +83,15 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
       ),
     );
     if (confirmed == true) {
-      await _join(groupId, _pwCtrl.text.trim());
+      await _join(groupId, _pwCtrl.text.trim(), notifyGroupEvents: notifyOnJoin);
     }
   }
 
-  Future<void> _join(String groupId, String password) async {
+  Future<void> _join(String groupId, String password, {bool notifyGroupEvents = true}) async {
     setState(() => _joiningId = groupId);
     try {
       final userId = Supabase.instance.client.auth.currentUser!.id;
-      await GroupService.joinGroup(groupId, userId, password);
+      await GroupService.joinGroup(groupId, userId, password, notifyGroupEvents: notifyGroupEvents);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('그룹에 가입했습니다!')));

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/group.dart';
+import '../services/auth_service.dart';
 import '../services/group_service.dart';
 
 class GroupInfoSheet extends StatefulWidget {
@@ -25,6 +26,8 @@ class GroupInfoSheet extends StatefulWidget {
 class _GroupInfoSheetState extends State<GroupInfoSheet> {
   List<Map<String, dynamic>> _members = [];
   bool _loading = true;
+  late bool _notifyGroupEvents;
+  bool _notifyBusy = false;
   bool _changeAdminMode = false;
   String? _selectedNewAdminId;
   bool _changePwMode = false;
@@ -41,7 +44,32 @@ class _GroupInfoSheetState extends State<GroupInfoSheet> {
   @override
   void initState() {
     super.initState();
+    _notifyGroupEvents = widget.group.notifyGroupEvents;
     _loadMembers();
+  }
+
+  Future<void> _onToggleNotify(bool v) async {
+    setState(() => _notifyBusy = true);
+    try {
+      await GroupService.setNotifyGroupEvents(
+        groupId: widget.group.id,
+        userId: AuthService.currentUser!.id,
+        enabled: v,
+      );
+      if (mounted) {
+        setState(() => _notifyGroupEvents = v);
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('설정을 저장하지 못했습니다.')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _notifyBusy = false);
+      }
+    }
   }
 
   Future<void> _loadMembers() async {
@@ -235,6 +263,16 @@ class _GroupInfoSheetState extends State<GroupInfoSheet> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: Text(group.description!, style: const TextStyle(color: Colors.grey)),
           ),
+
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+          child: SwitchListTile(
+            title: const Text('그룹 일정 푸시 알림'),
+            subtitle: const Text('그룹원이 등록한 일정을 알려받습니다(Firebase·서버 설정 시).'),
+            value: _notifyGroupEvents,
+            onChanged: _notifyBusy ? null : _onToggleNotify,
+          ),
+        ),
 
         const Divider(),
 

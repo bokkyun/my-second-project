@@ -12,6 +12,9 @@ class CalendarEvent {
   final String? creatorNickname;
   final List<String> groupIds;
 
+  /// `schedule` 일반 일정 | `group_event` 그룹 전체에 공유되는 이벤트
+  final String eventKind;
+
   const CalendarEvent({
     required this.id,
     required this.title,
@@ -23,7 +26,10 @@ class CalendarEvent {
     required this.creatorId,
     this.creatorNickname,
     required this.groupIds,
+    this.eventKind = 'schedule',
   });
+
+  bool get isGroupEvent => eventKind == 'group_event';
 
   factory CalendarEvent.fromMap(Map<String, dynamic> map,
       {String? creatorNickname}) {
@@ -39,6 +45,7 @@ class CalendarEvent {
       creatorId: map['creator_id'] as String,
       creatorNickname: creatorNickname,
       groupIds: visibility.map((v) => v['group_id'] as String).toList(),
+      eventKind: map['event_kind'] as String? ?? 'schedule',
     );
   }
 

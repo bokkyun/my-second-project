@@ -10,6 +10,7 @@ import 'screens/group_create_screen.dart';
 import 'screens/group_join_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/privacy_policy_screen.dart';
+import 'screens/today_schedule_page.dart';
 
 /// [setupAppRouter] 호출 전에 접근하지 마세요. `main()`에서 Supabase 초기화 직후 설정합니다.
 late final GoRouter appRouter;
@@ -46,7 +47,19 @@ void setupAppRouter() {
       GoRoute(path: '/reset-password', builder: (_, _) => const ResetPasswordScreen()),
       GoRoute(path: '/update-password', builder: (_, _) => const UpdatePasswordScreen()),
       GoRoute(path: '/privacy', builder: (_, _) => const PrivacyPolicyScreen()),
-      GoRoute(path: '/calendar', builder: (_, _) => const CalendarScreen()),
+      GoRoute(
+        path: '/calendar',
+        builder: (context, state) {
+          final q = state.uri.queryParameters;
+          return CalendarScreen(
+            initialOpenEventId: q['eventId'],
+          );
+        },
+      ),
+      GoRoute(
+        path: '/today-schedule',
+        builder: (_, _) => const TodaySchedulePage(),
+      ),
       GoRoute(path: '/groups/create', builder: (_, _) => const GroupCreateScreen()),
       GoRoute(path: '/groups/join', builder: (_, _) => const GroupJoinScreen()),
       GoRoute(path: '/profile', builder: (_, _) => const ProfileScreen()),

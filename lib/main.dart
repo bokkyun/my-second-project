@@ -3,6 +3,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'router.dart' show appRouter, setupAppRouter;
 import 'services/notification_service.dart';
+import 'services/push_messaging_service.dart';
 
 /// 빌드 시 `--dart-define=SUPABASE_URL=...` / `SUPABASE_ANON_KEY=...` 로 덮어쓸 수 있습니다.
 const String _kSupabaseUrl = String.fromEnvironment(
@@ -25,6 +26,10 @@ void main() async {
     anonKey: _kSupabaseAnonKey,
   );
   setupAppRouter();
+  NotificationService.attachRouter(appRouter);
+  await PushMessagingService.init(appRouter);
+  await NotificationService.scheduleDailySummaryFromPrefs([]);
+  await NotificationService.handleNotificationAppLaunch();
   runApp(const TeamSyncApp());
 }
 

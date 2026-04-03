@@ -7,11 +7,9 @@ class GroupService {
   static Future<List<Group>> fetchMyGroups(String userId) async {
     final res = await _db
         .from('group_members')
-        .select('role, groups(*)')
+        .select('role, notify_group_events, groups(*)')
         .eq('user_id', userId);
-    return (res as List)
-        .map((m) => Group.fromMap(m['groups'] as Map<String, dynamic>, m['role'] as String))
-        .toList();
+    return (res as List).map((m) => Group.fromMemberRow(m as Map<String, dynamic>)).toList();
   }
 
   static Future<List<Map<String, dynamic>>> fetchGroupMembers(
@@ -47,6 +45,7 @@ class GroupService {
     required String color,
     required bool isSearchable,
     required String password,
+    bool notifyGroupEvents = true,
   }) async {
     final group = await _db
         .from('groups')
@@ -64,10 +63,16 @@ class GroupService {
       'group_id': group['id'],
       'user_id': userId,
       'role': 'admin',
+      'notify_group_events': notifyGroupEvents,
     });
   }
 
-  static Future<void> joinGroup(String groupId, String userId, String password) async {
+  static Future<void> joinGroup(
+    String groupId,
+    String userId,
+    String password, {
+    bool notifyGroupEvents = true,
+  }) async {
     final verify = await _db
         .from('groups')
         .select('id')
@@ -81,7 +86,18 @@ class GroupService {
       'group_id': groupId,
       'user_id': userId,
       'role': 'member',
+      'notify_group_events': notifyGroupEvents,
     });
+  }
+
+  static Future<void> setNotifyGroupEvents({
+    required String groupId,
+    required String userId,
+    required bool enabled,
+  }) async {
+    await _db.from('group_members').update({
+      'notify_group_events': enabled,
+    }).eq('group_id', groupId).eq('user_id', userId);
   }
 
   static Future<void> leaveGroup(String groupId, String userId) async {

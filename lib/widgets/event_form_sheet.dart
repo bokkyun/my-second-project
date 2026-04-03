@@ -19,6 +19,7 @@ class EventFormSheet extends StatefulWidget {
     required String color,
     required List<String> groupIds,
     String? targetUserId,
+    required String eventKind,
   }) onSave;
 
   const EventFormSheet({
@@ -159,6 +160,7 @@ class _EventFormSheetState extends State<EventFormSheet> {
         color: _colorToHex(_color),
         groupIds: _selectedGroupIds.toList(),
         targetUserId: _targetUserId,
+        eventKind: widget.editEvent?.eventKind ?? 'schedule',
       );
       if (mounted) Navigator.pop(context);
     } catch (_) {

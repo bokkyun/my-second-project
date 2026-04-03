@@ -4,6 +4,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/group.dart';
 import '../services/auth_service.dart';
 import '../services/group_service.dart';
+import '../services/notification_service.dart';
+import '../services/reminder_prefs.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -18,6 +20,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   List<Group> _groups = [];
   bool _loading = true;
   bool _saving = false;
+  bool _reminderEnabled = false;
+  TimeOfDay _reminderTime = const TimeOfDay(hour: 8, minute: 0);
 
   @override
   void initState() {
@@ -39,11 +43,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
         .eq('id', userId)
         .single();
     final groups = await GroupService.fetchMyGroups(userId);
+    final remOn = await ReminderPrefs.isDailyReminderEnabled();
+    final remT = await ReminderPrefs.dailyReminderTime();
     if (mounted) {
       setState(() {
         _currentNickname = profile['nickname'] as String?;
         _nicknameCtrl.text = _currentNickname ?? '';
         _groups = groups;
+        _reminderEnabled = remOn;
+        _reminderTime = remT;
         _loading = false;
       });
     }
@@ -196,6 +204,66 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                         ),
                       ]),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 매일 일정 권유 알림
+                  Card(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    child: Column(
+                      children: [
+                        SwitchListTile(
+                          title: const Text('매일 일정 요약 알림'),
+                          subtitle: const Text(
+                            '켜면 설정한 시간에 오늘 일정이 요약된 푸시가 옵니다. 알림을 누르면 상세 목록을 볼 수 있습니다. 끄면 푸시가 오지 않습니다.',
+                          ),
+                          value: _reminderEnabled,
+                          onChanged: (v) async {
+                            setState(() => _reminderEnabled = v);
+                            await ReminderPrefs.setDailyReminder(
+                              enabled: v,
+                              time: _reminderTime,
+                            );
+                            await NotificationService.scheduleDailySummaryFromPrefs([]);
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(v ? '알림이 예약되었습니다.' : '일정 권유 알림을 껐습니다.'),
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.schedule),
+                          title: const Text('알림 시간'),
+                          subtitle: Text(_reminderTime.format(context)),
+                          enabled: _reminderEnabled,
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: _reminderEnabled
+                              ? () async {
+                                  final t = await showTimePicker(
+                                    context: context,
+                                    initialTime: _reminderTime,
+                                  );
+                                  if (t != null && mounted) {
+                                    setState(() => _reminderTime = t);
+                                    await ReminderPrefs.setDailyReminder(
+                                      enabled: _reminderEnabled,
+                                      time: t,
+                                    );
+                                    await NotificationService.scheduleDailySummaryFromPrefs([]);
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('알림 시간이 저장되었습니다.')),
+                                      );
+                                    }
+                                  }
+                                }
+                              : null,
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 16),

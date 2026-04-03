@@ -67,6 +67,7 @@ class EventService {
     required bool isAllDay,
     required String color,
     required List<String> groupIds,
+    String eventKind = 'schedule',
   }) async {
     final ev = await _db
         .from('events')
@@ -78,6 +79,7 @@ class EventService {
           'is_all_day': isAllDay,
           'color': color,
           'creator_id': userId,
+          'event_kind': eventKind,
         })
         .select()
         .single();
@@ -100,6 +102,7 @@ class EventService {
     required String color,
     required List<String> groupIds,
     bool isAdminOverride = false,
+    String eventKind = 'schedule',
   }) async {
     final query = _db.from('events').update({
       'title': title,
@@ -108,6 +111,7 @@ class EventService {
       'ends_at': endsAt.toUtc().toIso8601String(),
       'is_all_day': isAllDay,
       'color': color,
+      'event_kind': eventKind,
     }).eq('id', eventId);
     if (isAdminOverride) {
       await query;
@@ -131,5 +135,25 @@ class EventService {
     } else {
       await query.eq('creator_id', userId);
     }
+  }
+
+  /// 푸시 탭 등으로 단건 조회 (RLS 허용 시)
+  static Future<CalendarEvent?> fetchEventById(String eventId) async {
+    final row = await _db
+        .from('events')
+        .select('*, event_visibility(group_id)')
+        .eq('id', eventId)
+        .maybeSingle();
+    if (row == null) return null;
+    final creatorId = row['creator_id'] as String;
+    final prof = await _db
+        .from('profiles')
+        .select('nickname')
+        .eq('id', creatorId)
+        .maybeSingle();
+    return CalendarEvent.fromMap(
+      row,
+      creatorNickname: prof?['nickname'] as String?,
+    );
   }
 }
