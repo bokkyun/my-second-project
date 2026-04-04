@@ -21,10 +21,14 @@ void main() async {
   await initializeDateFormatting('ko_KR');
   await NotificationService.initialize();
   // 커스텀 HttpClient(IOClient)는 일부 기기에서 DNS/연결과 맞지 않을 수 있어 SDK 기본 클라이언트 사용
-  await Supabase.initialize(
-    url: _kSupabaseUrl,
-    anonKey: _kSupabaseAnonKey,
-  );
+  try {
+    await Supabase.initialize(
+      url: _kSupabaseUrl,
+      anonKey: _kSupabaseAnonKey,
+    ).timeout(const Duration(seconds: 10));
+  } catch (e) {
+    debugPrint('Supabase 초기화 타임아웃 또는 오류 - 오프라인 모드로 진행: $e');
+  }
   setupAppRouter();
   NotificationService.attachRouter(appRouter);
   await PushMessagingService.init(appRouter);

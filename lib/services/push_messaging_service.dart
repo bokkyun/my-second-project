@@ -18,9 +18,10 @@ class PushMessagingService {
     _router = router;
 
     try {
-      await Firebase.initializeApp();
+      await Firebase.initializeApp()
+          .timeout(const Duration(seconds: 6));
     } catch (e, st) {
-      debugPrint('Firebase 초기화 생략(설정 파일 없음): $e\n$st');
+      debugPrint('Firebase 초기화 생략(설정 파일 없음 또는 타임아웃): $e\n$st');
       return;
     }
 
