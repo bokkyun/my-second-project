@@ -50,7 +50,7 @@ class _CalendarScreenState extends State<CalendarScreen>
   RealtimeChannel? _realtimeChannel;
   Timer? _realtimeDebounce;
   Timer? _pollTimer;
-  String _subwaySummary = '??? ?? ???? ??? ?? ??? ???.';
+  String _subwaySummary = '지하철 설정 버튼에서 출퇴근 역을 저장해 주세요.';
   bool _loadingSubwaySummary = false;
 
   @override
@@ -107,7 +107,7 @@ class _CalendarScreenState extends State<CalendarScreen>
           );
       _realtimeChannel!.subscribe();
     } catch (e) {
-      debugPrint('[CalendarScreen] Realtime ??? ??????: $e');
+      debugPrint('[CalendarScreen] Realtime subscription failed: $e');
     }
   }
 
@@ -301,7 +301,7 @@ class _CalendarScreenState extends State<CalendarScreen>
     } catch (_) {
       if (mounted) {
         setState(() {
-          _subwaySummary = '??? ?? ??? ???? ?????.';
+          _subwaySummary = '지하철 도착 정보를 가져오지 못했습니다.';
         });
       }
     } finally {
@@ -319,8 +319,8 @@ class _CalendarScreenState extends State<CalendarScreen>
           children: [
             ListTile(
               leading: Icon(Icons.event, color: Theme.of(context).colorScheme.primary),
-              title: const Text('??? ????'),
-              subtitle: const Text('????? ?????? ????????? ????? ????'),
+              title: const Text('일정 추가'),
+              subtitle: const Text('나만 또는 선택한 그룹에 공유'),
               onTap: () {
                 Navigator.pop(ctx);
                 _openEventForm(date: _selectedDay);
@@ -328,8 +328,8 @@ class _CalendarScreenState extends State<CalendarScreen>
             ),
             ListTile(
               leading: Icon(Icons.groups, color: Theme.of(context).colorScheme.secondary),
-              title: const Text('?? ????? ??????'),
-              subtitle: const Text('????????? ???? ???? ??????? ???????? ???? ? ?????? ????'),
+              title: const Text('그룹 이벤트 만들기'),
+              subtitle: const Text('선택한 그룹의 모든 구성원 캘린더에 등록 · 푸시 알림'),
               onTap: () {
                 Navigator.pop(ctx);
                 _openGroupEventForm();
@@ -344,7 +344,7 @@ class _CalendarScreenState extends State<CalendarScreen>
   void _openGroupEventForm() {
     if (_groups.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('??? ????? ??????? ???????.')),
+        const SnackBar(content: Text('먼저 그룹에 참여해 주세요.')),
       );
       return;
     }
@@ -402,7 +402,7 @@ class _CalendarScreenState extends State<CalendarScreen>
           await _loadEvents();
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(editEvent != null ? '???? ???????????????????.' : '???? ???????????????????!')));
+              SnackBar(content: Text(editEvent != null ? '일정이 수정되었습니다.' : '일정이 저장되었습니다!')));
           }
         },
       ),
@@ -427,15 +427,15 @@ class _CalendarScreenState extends State<CalendarScreen>
           final confirmed = await showDialog<bool>(
             context: context,
             builder: (_) => AlertDialog(
-              title: const Text('??? ?????'),
-              content: Text('\'${event.title}\' ????? ?????????????????????'),
+              title: const Text('일정 삭제'),
+              content: Text('\'${event.title}\' 일정을 삭제하시겠습니까?'),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('????')),
+                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
                 ElevatedButton(
                   onPressed: () => Navigator.pop(context, true),
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-                  child: const Text('?????'),
+                  child: const Text('삭제'),
                 ),
               ],
             ),
@@ -447,7 +447,7 @@ class _CalendarScreenState extends State<CalendarScreen>
             );
             await _loadEvents();
             if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('???? ???????????????????.')));
+              const SnackBar(content: Text('일정이 삭제되었습니다.')));
           }
         },
       ),
@@ -465,19 +465,19 @@ class _CalendarScreenState extends State<CalendarScreen>
           await GroupService.leaveGroup(gid, AuthService.currentUser!.id);
           await _loadAll();
           if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('???????? ??????????????????.')));
+            const SnackBar(content: Text('그룹에서 탈퇴했습니다.')));
         },
         onDelete: (gid) async {
           await GroupService.deleteGroup(gid, AuthService.currentUser!.id);
           await _loadAll();
           if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('??? ???????????????????.')));
+            const SnackBar(content: Text('그룹이 삭제되었습니다.')));
         },
         onChangeAdmin: (gid, newAdminUserId) async {
           await GroupService.changeGroupAdmin(gid, newAdminUserId, AuthService.currentUser!.id);
           await _loadAll();
           if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('???????? ?????????????????.')));
+            const SnackBar(content: Text('관리자가 변경되었습니다.')));
         },
         onChangePassword: (gid, newPassword) async {
           await GroupService.changeGroupPassword(gid, AuthService.currentUser!.id, newPassword);
@@ -502,7 +502,7 @@ class _CalendarScreenState extends State<CalendarScreen>
         actions: [
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.red),
-            tooltip: '?????????',
+            tooltip: '로그아웃',
             onPressed: () async {
               await PushMessagingService.clearTokenForLogout();
               await AuthService.signOut();
@@ -596,13 +596,13 @@ class _CalendarScreenState extends State<CalendarScreen>
                                     const SizedBox(height: 8),
                                     Text(
                                       _selectedDay != null
-                                          ? '${DateFormat('M??? d?').format(_selectedDay!)} ???? ????????????.'
-                                          : '?????? ???????????????.',
+                                          ? '${DateFormat('M월 d일').format(_selectedDay!)} 일정이 없습니다.'
+                                          : '날짜를 선택해주세요.',
                                       style: const TextStyle(color: Colors.grey),
                                     ),
                                     const SizedBox(height: 8),
                                     Text(
-                                      '???????? ??????? ???????',
+                                      '아래로 당겨서 새로고침',
                                       style: TextStyle(
                                         fontSize: 12,
                                         color: Theme.of(context).colorScheme.outline,
@@ -637,7 +637,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                                   if (ev.creatorNickname != null)
                                     Text(ev.creatorNickname!, style: const TextStyle(fontSize: 12, color: Colors.grey)),
                                   Text(
-                                    ev.isAllDay ? '???? ???' : DateFormat('HH:mm').format(ev.startsAt),
+                                    ev.isAllDay ? '하루 종일' : DateFormat('HH:mm').format(ev.startsAt),
                                     style: const TextStyle(fontSize: 12),
                                   ),
                                 ]),
@@ -660,7 +660,7 @@ class _CalendarScreenState extends State<CalendarScreen>
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  _loadingSubwaySummary ? '??? ?? ?? ?? ?...' : _subwaySummary,
+                  _loadingSubwaySummary ? '지하철 도착 정보 확인 중...' : _subwaySummary,
                   style: const TextStyle(fontSize: 12, height: 1.3),
                   maxLines: 5,
                   overflow: TextOverflow.ellipsis,
@@ -681,13 +681,13 @@ class _CalendarScreenState extends State<CalendarScreen>
           );
           final settingsFab = FloatingActionButton.small(
             heroTag: 'calendar_reminder_settings',
-            tooltip: '?????? ??? ?????? ???? ?????',
+            tooltip: '오늘 일정 요약 알림 설정',
             onPressed: _openReminderSettings,
             child: const Icon(Icons.settings),
           );
           final addFab = FloatingActionButton(
             heroTag: 'calendar_add_menu',
-            tooltip: '??? ? ?? ?????',
+            tooltip: '일정 · 그룹 이벤트',
             onPressed: _showAddMenu,
             child: const Icon(Icons.add),
           );
@@ -733,12 +733,12 @@ class _CalendarScreenState extends State<CalendarScreen>
             child: Row(children: [
               Icon(Icons.calendar_month, color: Theme.of(context).colorScheme.primary),
               const SizedBox(width: 8),
-              Text('??? ??', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16,
+              Text('내 그룹', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16,
                   color: Theme.of(context).colorScheme.primary)),
               const Spacer(),
               IconButton(
                 icon: const Icon(Icons.add),
-                tooltip: '?? ??????',
+                tooltip: '그룹 생성',
                 onPressed: () { Navigator.pop(context); context.push('/groups/create'); },
               ),
             ]),
@@ -753,7 +753,7 @@ class _CalendarScreenState extends State<CalendarScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                const Text('?????? ??? ????????????.', style: TextStyle(color: Colors.grey)),
+                const Text('속한 그룹이 없습니다.', style: TextStyle(color: Colors.grey)),
                 const SizedBox(height: 12),
                 FilledButton.icon(
                   onPressed: () {
@@ -761,20 +761,20 @@ class _CalendarScreenState extends State<CalendarScreen>
                     context.push('/groups/create');
                   },
                   icon: const Icon(Icons.add_circle_outline),
-                  label: const Text('??? ?? ??????'),
+                  label: const Text('새 그룹 만들기'),
                 ),
                 const SizedBox(height: 8),
                 TextButton.icon(
                   onPressed: () { Navigator.pop(context); context.push('/groups/join'); },
                   icon: const Icon(Icons.group_add),
-                  label: const Text('?? ?????????'),
+                  label: const Text('그룹 가입하기'),
                 ),
               ]),
             )
           else ...[
             // ??? ???????
             CheckboxListTile(
-              title: const Text('???', style: TextStyle(fontWeight: FontWeight.w600)),
+              title: const Text('전체', style: TextStyle(fontWeight: FontWeight.w600)),
               value: _visibleGroupIds.length == _groups.length
                   ? true
                   : _visibleGroupIds.isEmpty
@@ -823,17 +823,17 @@ class _CalendarScreenState extends State<CalendarScreen>
           const Divider(height: 1),
           ListTile(
             leading: Icon(Icons.add_circle_outline, color: Theme.of(context).colorScheme.primary),
-            title: const Text('??? ?? ??????'),
+            title: const Text('새 그룹 만들기'),
             onTap: () { Navigator.pop(context); context.push('/groups/create'); },
           ),
           ListTile(
             leading: const Icon(Icons.group_add),
-            title: const Text('?? ?????'),
+            title: const Text('그룹 가입'),
             onTap: () { Navigator.pop(context); context.push('/groups/join'); },
           ),
           ListTile(
             leading: const Icon(Icons.person),
-            title: const Text('???????? ?????'),
+            title: const Text('프로필 설정'),
             onTap: () { Navigator.pop(context); context.push('/profile'); },
           ),
         ]),
@@ -841,3 +841,4 @@ class _CalendarScreenState extends State<CalendarScreen>
     );
   }
 }
+

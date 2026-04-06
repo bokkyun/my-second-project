@@ -6,24 +6,28 @@ class SubwayLeg {
   const SubwayLeg({
     required this.station,
     required this.direction,
+    this.line = '',
   });
 
   final String station;
   final String direction;
+  final String line;
 
   Map<String, dynamic> toJson() => {
         'station': station,
         'direction': direction,
+        'line': line,
       };
 
   factory SubwayLeg.fromJson(Map<String, dynamic> json) {
     return SubwayLeg(
       station: (json['station'] as String? ?? '').trim(),
       direction: (json['direction'] as String? ?? '').trim(),
+      line: (json['line'] as String? ?? '').trim(),
     );
   }
 
-  bool get isValid => station.isNotEmpty && direction.isNotEmpty;
+  bool get isValid => station.isNotEmpty;
 }
 
 class SubwayCommuteConfig {

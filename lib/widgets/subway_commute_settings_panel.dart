@@ -1,6 +1,7 @@
 ﻿import 'package:flutter/material.dart';
 
 import '../services/subway_prefs.dart';
+import '../services/subway_station_search_service.dart';
 import '../services/widget_sync_service.dart';
 
 class SubwayCommuteSettingsPanel extends StatefulWidget {
@@ -50,7 +51,8 @@ class _SubwayCommuteSettingsPanelState extends State<SubwayCommuteSettingsPanel>
   List<SubwayLeg> _toLegs(List<_LegEdit> source) => source
       .map((e) => SubwayLeg(
             station: e.station.text.trim(),
-            direction: e.direction.text.trim(),
+            direction: '',
+            line: e.line,
           ))
       .where((e) => e.isValid)
       .toList();
@@ -62,7 +64,7 @@ class _SubwayCommuteSettingsPanelState extends State<SubwayCommuteSettingsPanel>
     );
     if (!cfg.hasAny) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('최소 1개 역/방향을 입력해 주세요.')),
+        const SnackBar(content: Text('최소 1개 역을 입력해 주세요.')),
       );
       return;
     }
@@ -75,6 +77,18 @@ class _SubwayCommuteSettingsPanelState extends State<SubwayCommuteSettingsPanel>
       const SnackBar(content: Text('출퇴근 지하철 경로를 저장했습니다.')),
     );
     Navigator.pop(context);
+  }
+
+  Future<void> _pickStation(_LegEdit leg) async {
+    final picked = await showDialog<SubwayStationCandidate>(
+      context: context,
+      builder: (_) => const _StationSearchDialog(),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      leg.station.text = picked.stationName;
+      leg.line = picked.lineName;
+    });
   }
 
   Widget _section(String title, List<_LegEdit> list) {
@@ -90,20 +104,40 @@ class _SubwayCommuteSettingsPanelState extends State<SubwayCommuteSettingsPanel>
             ...List.generate(list.length, (i) {
               final isFirst = i == 0;
               return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: TextField(
-                      controller: list[i].station,
-                      decoration: InputDecoration(
-                        labelText: isFirst ? '역 이름' : '환승역 $i',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: list[i].direction,
-                      decoration: const InputDecoration(labelText: '방향'),
+                    child: Column(
+                      children: [
+                        TextField(
+                          controller: list[i].station,
+                          readOnly: true,
+                          decoration: InputDecoration(
+                            labelText: isFirst ? '역 이름' : '환승역 $i',
+                            hintText: '돋보기로 역 검색',
+                            suffixIcon: IconButton(
+                              icon: const Icon(Icons.search),
+                              tooltip: '역 검색',
+                              onPressed: () => _pickStation(list[i]),
+                            ),
+                          ),
+                        ),
+                        if (list[i].line.isNotEmpty)
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 4, left: 4),
+                              child: Text(
+                                '선택 노선: ${list[i].line}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color:
+                                      Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                   IconButton(
@@ -140,7 +174,7 @@ class _SubwayCommuteSettingsPanelState extends State<SubwayCommuteSettingsPanel>
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          '예: 흑석역 중앙보훈병원행, 동작역 오이도행',
+          '출근/퇴근 역을 선택하면 각 역의 양방향 도착 정보를 표시합니다.',
           style: TextStyle(
             fontSize: 12,
             color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -167,19 +201,120 @@ class _SubwayCommuteSettingsPanelState extends State<SubwayCommuteSettingsPanel>
 }
 
 class _LegEdit {
-  _LegEdit({String station = '', String direction = ''})
-      : station = TextEditingController(text: station),
-        direction = TextEditingController(text: direction);
+  _LegEdit({
+    String station = '',
+    this.line = '',
+  }) : station = TextEditingController(text: station);
 
-  factory _LegEdit.fromLeg(SubwayLeg leg) =>
-      _LegEdit(station: leg.station, direction: leg.direction);
+  factory _LegEdit.fromLeg(SubwayLeg leg) => _LegEdit(
+        station: leg.station,
+        line: leg.line,
+      );
 
   final TextEditingController station;
-  final TextEditingController direction;
+  String line;
 
   void dispose() {
     station.dispose();
-    direction.dispose();
+  }
+}
+
+class _StationSearchDialog extends StatefulWidget {
+  const _StationSearchDialog();
+
+  @override
+  State<_StationSearchDialog> createState() => _StationSearchDialogState();
+}
+
+class _StationSearchDialogState extends State<_StationSearchDialog> {
+  final TextEditingController _query = TextEditingController();
+  bool _loading = false;
+  String? _error;
+  List<SubwayStationCandidate> _results = const [];
+
+  @override
+  void dispose() {
+    _query.dispose();
+    super.dispose();
+  }
+
+  Future<void> _search() async {
+    final keyword = _query.text.trim();
+    if (keyword.isEmpty) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final rows = await SubwayStationSearchService.searchStations(keyword);
+      if (!mounted) return;
+      setState(() => _results = rows);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = '역 검색 중 오류가 발생했습니다.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('역 검색'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _query,
+              decoration: InputDecoration(
+                hintText: '예: 흑석, 동작, 강남',
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.search),
+                  onPressed: _loading ? null : _search,
+                ),
+              ),
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => _search(),
+            ),
+            const SizedBox(height: 12),
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: CircularProgressIndicator(),
+              )
+            else if (_error != null)
+              Text(_error!, style: const TextStyle(color: Colors.red))
+            else if (_results.isEmpty)
+              const Text('역명을 입력하고 검색해 주세요.')
+            else
+              SizedBox(
+                height: 260,
+                child: ListView.separated(
+                  itemCount: _results.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (_, i) {
+                    final item = _results[i];
+                    return ListTile(
+                      dense: true,
+                      title: Text(item.stationName),
+                      subtitle: Text(item.lineName),
+                      onTap: () => Navigator.pop(context, item),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('닫기'),
+        ),
+      ],
+    );
   }
 }
 
