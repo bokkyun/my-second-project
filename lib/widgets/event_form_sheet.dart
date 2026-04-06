@@ -163,10 +163,24 @@ class _EventFormSheetState extends State<EventFormSheet> {
         eventKind: widget.editEvent?.eventKind ?? 'schedule',
       );
       if (mounted) Navigator.pop(context);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[EventFormSheet] submit error: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('저장 중 오류가 발생했습니다.')));
+        showDialog<void>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('저장 실패'),
+            content: SingleChildScrollView(
+              child: Text('오류 내용:\n$e'),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('확인'),
+              ),
+            ],
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -179,9 +193,14 @@ class _EventFormSheetState extends State<EventFormSheet> {
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.editEvent != null;
+    final keyboardBottom = MediaQuery.viewInsetsOf(context).bottom;
+    final systemNavBottom = MediaQuery.viewPaddingOf(context).bottom;
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Container(
+      padding: EdgeInsets.only(bottom: keyboardBottom),
+      child: SafeArea(
+        top: false,
+        minimum: EdgeInsets.only(bottom: systemNavBottom),
+        child: Container(
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -338,6 +357,7 @@ class _EventFormSheetState extends State<EventFormSheet> {
             ),
           ),
         ]),
+        ),
       ),
     );
   }

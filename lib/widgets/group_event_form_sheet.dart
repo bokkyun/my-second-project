@@ -135,9 +135,14 @@ class _GroupEventFormSheetState extends State<GroupEventFormSheet> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final keyboardBottom = MediaQuery.viewInsetsOf(context).bottom;
+    final systemNavBottom = MediaQuery.viewPaddingOf(context).bottom;
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Container(
+      padding: EdgeInsets.only(bottom: keyboardBottom),
+      child: SafeArea(
+        top: false,
+        minimum: EdgeInsets.only(bottom: systemNavBottom),
+        child: Container(
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -313,6 +318,7 @@ class _GroupEventFormSheetState extends State<GroupEventFormSheet> {
               ),
             ),
           ],
+        ),
         ),
       ),
     );
