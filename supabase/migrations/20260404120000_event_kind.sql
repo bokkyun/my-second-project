@@ -10,3 +10,4 @@ ALTER TABLE public.events
   CHECK (event_kind IN ('schedule', 'group_event'));
 
 COMMENT ON COLUMN public.events.event_kind IS 'schedule: 일반 일정, group_event: 선택 그룹 전체에 공유되는 이벤트';
+  

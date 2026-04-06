@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -25,8 +27,12 @@ class NotificationService {
   static const _eventIdBase = 10000;
   static const _maxEventNotificationSlots = 500;
 
-  /// 매일 요약 (고정 ID)
-  static const _dailySummaryNotificationId = 999998;
+  /// 매일 요약 — 구버전 단일 예약 ID (마이그레이션 시 취소)
+  static const _dailySummaryNotificationIdLegacy = 999998;
+
+  /// 요일별 주간 반복 예약 ID (weekday `DateTime.weekday` 1=월 … 7=일).
+  /// 999981~999987 사용 (999997 그룹 포그라운드 ID와 겹치지 않음)
+  static int _dailySummaryIdForWeekday(int weekday) => 999980 + weekday;
 
   /// 그룹 푸시 포그라운드 표시 (고정 ID)
   static const _groupForegroundNotificationId = 999997;
@@ -44,6 +50,7 @@ class NotificationService {
 
   static Future<void> initialize() async {
     tz_data.initializeTimeZones();
+    await _configureLocalTimeZone();
 
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const ios = DarwinInitializationSettings(
@@ -57,10 +64,66 @@ class NotificationService {
       onDidReceiveNotificationResponse: _onNotificationResponse,
     );
 
-    await _plugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.requestNotificationsPermission();
+    final androidImpl = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    await androidImpl?.requestNotificationsPermission();
+    // Android 12+ 정확한 알람 — 거부 시 예약이 실패하거나 지연될 수 있음
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      await androidImpl?.requestExactAlarmsPermission();
+    }
+  }
+
+  /// 기기 로컬 시간대를 `tz.local`에 맞춤. 미설정 시 UTC 기준으로 예약되어 알림 시각이 어긋남.
+  /// Android 12+ 에서 정확한 알람 권한이 없으면 네이티브가 예약 시 예외를 던져 알림이 전혀 잡히지 않음.
+  /// 이 경우 [AndroidScheduleMode.inexactAllowWhileIdle] 로 대체한다.
+  static Future<AndroidScheduleMode> _androidScheduleModeForAlarms() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return AndroidScheduleMode.exactAllowWhileIdle;
+    }
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    final canExact = await android?.canScheduleExactNotifications();
+    if (canExact == false) {
+      debugPrint(
+        'NotificationService: 정확한 알람 권한 없음 → inexactAllowWhileIdle 로 예약',
+      );
+      return AndroidScheduleMode.inexactAllowWhileIdle;
+    }
+    return AndroidScheduleMode.exactAllowWhileIdle;
+  }
+
+  /// 설정에서 권한을 허용한 뒤 돌아왔을 때 다시 예약
+  static Future<void> rescheduleDailySummaryAfterAppResume() async {
+    try {
+      await scheduleDailySummaryFromPrefs([]);
+    } catch (e) {
+      debugPrint('NotificationService: resume 후 재예약 실패 $e');
+    }
+  }
+
+  static Future<void> _configureLocalTimeZone() async {
+    if (kIsWeb) {
+      try {
+        tz.setLocalLocation(tz.getLocation('Asia/Seoul'));
+      } catch (_) {}
+      return;
+    }
+    try {
+      final info = await FlutterTimezone.getLocalTimezone();
+      final id = info.identifier;
+      if (id.isEmpty) {
+        throw ArgumentError('빈 시간대 식별자');
+      }
+      tz.setLocalLocation(tz.getLocation(id));
+      debugPrint('NotificationService: 로컬 시간대 $id');
+    } catch (e) {
+      debugPrint('NotificationService: 시간대 자동 설정 실패 ($e), Asia/Seoul 사용');
+      try {
+        tz.setLocalLocation(tz.getLocation('Asia/Seoul'));
+      } catch (e2) {
+        debugPrint('NotificationService: Asia/Seoul 설정도 실패: $e2');
+      }
+    }
   }
 
   static void _onNotificationResponse(NotificationResponse response) {
@@ -132,23 +195,15 @@ class NotificationService {
     return s;
   }
 
-  /// [todayEvents]는 오늘 포함 일정 목록(캘린더와 동일 필터). 비어 있으면 «일정 없음» 요약.
-  static Future<void> scheduleDailySummaryFromPrefs(
-      List<CalendarEvent> todayEvents) async {
-    await _plugin.cancel(_dailySummaryNotificationId);
-
-    final enabled = await ReminderPrefs.isDailyReminderEnabled();
-    if (!enabled) return;
-
-    final time = await ReminderPrefs.dailyReminderTime();
-    final localTz = tz.local;
-    final scheduled = _nextInstanceOfTime(time.hour, time.minute, localTz);
-
-    final title = _buildDailySummaryTitle(todayEvents.length);
-    final body = _buildDailySummaryBody(todayEvents);
-
+  static Future<void> _scheduleDailySummaryOnce({
+    required int weekday,
+    required String title,
+    required String body,
+    required tz.TZDateTime scheduled,
+    required AndroidScheduleMode androidMode,
+  }) async {
     await _plugin.zonedSchedule(
-      _dailySummaryNotificationId,
+      _dailySummaryIdForWeekday(weekday),
       title,
       body,
       scheduled,
@@ -163,25 +218,99 @@ class NotificationService {
           styleInformation: BigTextStyleInformation(body),
           category: AndroidNotificationCategory.event,
         ),
-        iOS: DarwinNotificationDetails(
+        iOS: const DarwinNotificationDetails(
           presentAlert: true,
           presentBadge: true,
           presentSound: true,
           subtitle: '오늘 일정 요약',
         ),
       ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      androidScheduleMode: androidMode,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.time,
+      matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
       payload: payloadDailySummary,
     );
   }
 
-  static tz.TZDateTime _nextInstanceOfTime(
-      int hour, int minute, tz.Location location) {
+  /// [todayEvents]는 오늘 포함 일정 목록(캘린더와 동일 필터). 비어 있으면 «일정 없음» 요약.
+  static Future<void> scheduleDailySummaryFromPrefs(
+      List<CalendarEvent> todayEvents) async {
+    await ReminderPrefs.ensureMigrated();
+    await _plugin.cancel(_dailySummaryNotificationIdLegacy);
+    // 구 ID(999991~995) 및 신규(999981~987) 정리
+    for (final id in <int>{
+      999991,
+      999992,
+      999993,
+      999994,
+      999995,
+      ...List.generate(7, (i) => 999981 + i),
+    }) {
+      await _plugin.cancel(id);
+    }
+
+    final title = _buildDailySummaryTitle(todayEvents.length);
+    final body = _buildDailySummaryBody(todayEvents);
+    final localTz = tz.local;
+    final androidMode = await _androidScheduleModeForAlarms();
+
+    for (var weekday = 1; weekday <= 7; weekday++) {
+      final on = await ReminderPrefs.isWeekdayEnabled(weekday);
+      if (!on) continue;
+
+      final time = await ReminderPrefs.weekdayTime(weekday);
+      final scheduled = _nextInstanceOfWeekdayAndTime(
+        weekday,
+        time.hour,
+        time.minute,
+        localTz,
+      );
+
+      try {
+        await _scheduleDailySummaryOnce(
+          weekday: weekday,
+          title: title,
+          body: body,
+          scheduled: scheduled,
+          androidMode: androidMode,
+        );
+      } catch (e) {
+        if (androidMode == AndroidScheduleMode.exactAllowWhileIdle) {
+          try {
+            await _scheduleDailySummaryOnce(
+              weekday: weekday,
+              title: title,
+              body: body,
+              scheduled: scheduled,
+              androidMode: AndroidScheduleMode.inexactAllowWhileIdle,
+            );
+            debugPrint(
+              'NotificationService: 요약 알림 inexact 로 재예약됨 (weekday=$weekday)',
+            );
+          } catch (e2) {
+            debugPrint(
+              'NotificationService: 요약 알림 예약 실패 (weekday=$weekday) $e2',
+            );
+          }
+        } else {
+          debugPrint(
+            'NotificationService: 요약 알림 예약 실패 (weekday=$weekday) $e',
+          );
+        }
+      }
+    }
+  }
+
+  /// [weekday]는 `DateTime.weekday`와 동일 (월=1 … 일=7).
+  static tz.TZDateTime _nextInstanceOfWeekdayAndTime(
+    int weekday,
+    int hour,
+    int minute,
+    tz.Location location,
+  ) {
     final now = tz.TZDateTime.now(location);
-    var scheduled = tz.TZDateTime(
+    var candidate = tz.TZDateTime(
       location,
       now.year,
       now.month,
@@ -189,10 +318,13 @@ class NotificationService {
       hour,
       minute,
     );
-    if (scheduled.isBefore(now)) {
-      scheduled = scheduled.add(const Duration(days: 1));
+    for (var i = 0; i < 8; i++) {
+      if (candidate.weekday == weekday && !candidate.isBefore(now)) {
+        return candidate;
+      }
+      candidate = candidate.add(const Duration(days: 1));
     }
-    return scheduled;
+    return candidate;
   }
 
   /// 포그라운드에서 FCM과 유사하게 표시 (탭 시 일정 상세)
@@ -232,6 +364,7 @@ class NotificationService {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final localTz = tz.local;
+    final androidMode = await _androidScheduleModeForAlarms();
 
     for (int i = 0; i < events.length; i++) {
       final event = events[i];
@@ -260,30 +393,65 @@ class NotificationService {
 
       if (notifyAt.isBefore(now)) continue;
 
-      await _plugin.zonedSchedule(
-        _eventIdBase + i,
-        event.title,
-        body,
-        tz.TZDateTime.from(notifyAt, localTz),
-        NotificationDetails(
-          android: AndroidNotificationDetails(
-            _channelId,
-            _channelName,
-            channelDescription: _channelDesc,
-            importance: Importance.high,
-            priority: Priority.high,
-            color: event.flutterColor,
+      try {
+        await _plugin.zonedSchedule(
+          _eventIdBase + i,
+          event.title,
+          body,
+          tz.TZDateTime.from(notifyAt, localTz),
+          NotificationDetails(
+            android: AndroidNotificationDetails(
+              _channelId,
+              _channelName,
+              channelDescription: _channelDesc,
+              importance: Importance.high,
+              priority: Priority.high,
+              color: event.flutterColor,
+            ),
+            iOS: const DarwinNotificationDetails(
+              presentAlert: true,
+              presentBadge: true,
+              presentSound: true,
+            ),
           ),
-          iOS: const DarwinNotificationDetails(
-            presentAlert: true,
-            presentBadge: true,
-            presentSound: true,
-          ),
-        ),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
-      );
+          androidScheduleMode: androidMode,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+        );
+      } catch (e) {
+        if (androidMode == AndroidScheduleMode.exactAllowWhileIdle) {
+          try {
+            await _plugin.zonedSchedule(
+              _eventIdBase + i,
+              event.title,
+              body,
+              tz.TZDateTime.from(notifyAt, localTz),
+              NotificationDetails(
+                android: AndroidNotificationDetails(
+                  _channelId,
+                  _channelName,
+                  channelDescription: _channelDesc,
+                  importance: Importance.high,
+                  priority: Priority.high,
+                  color: event.flutterColor,
+                ),
+                iOS: const DarwinNotificationDetails(
+                  presentAlert: true,
+                  presentBadge: true,
+                  presentSound: true,
+                ),
+              ),
+              androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+              uiLocalNotificationDateInterpretation:
+                  UILocalNotificationDateInterpretation.absoluteTime,
+            );
+          } catch (e2) {
+            debugPrint('NotificationService: 일정 알림 예약 실패 ${event.title} $e2');
+          }
+        } else {
+          debugPrint('NotificationService: 일정 알림 예약 실패 ${event.title} $e');
+        }
+      }
     }
 
     final todaySlice = eventsForCalendarDay(events, now);

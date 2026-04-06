@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -15,6 +17,7 @@ import '../widgets/event_form_sheet.dart';
 import '../widgets/event_detail_sheet.dart';
 import '../widgets/group_event_form_sheet.dart';
 import '../widgets/group_info_sheet.dart';
+import '../widgets/daily_reminder_settings_panel.dart';
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({
@@ -29,7 +32,8 @@ class CalendarScreen extends StatefulWidget {
   State<CalendarScreen> createState() => _CalendarScreenState();
 }
 
-class _CalendarScreenState extends State<CalendarScreen> {
+class _CalendarScreenState extends State<CalendarScreen>
+    with WidgetsBindingObserver {
   List<Group> _groups = [];
   Set<String> _visibleGroupIds = {};
   List<CalendarEvent> _events = [];
@@ -40,13 +44,104 @@ class _CalendarScreenState extends State<CalendarScreen> {
   bool _loadingEvents = true;
   String? _pendingEventId;
 
+  RealtimeChannel? _realtimeChannel;
+  Timer? _realtimeDebounce;
+  Timer? _pollTimer;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _selectedDay = DateTime.now();
     _pendingEventId = widget.initialOpenEventId;
     _loadAll();
     _loadProfile();
+    _subscribeCalendarRealtime();
+    _pollTimer = Timer.periodic(const Duration(seconds: 90), (_) {
+      if (mounted) unawaited(_refreshEventsQuietly());
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _realtimeDebounce?.cancel();
+    _pollTimer?.cancel();
+    _unsubscribeCalendarRealtime();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshEventsQuietly());
+    }
+  }
+
+  void _subscribeCalendarRealtime() {
+    final uid = AuthService.currentUser?.id;
+    if (uid == null) return;
+    try {
+      _unsubscribeCalendarRealtime();
+      final client = Supabase.instance.client;
+      _realtimeChannel = client
+          .channel('calendar-sync-$uid')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'events',
+            callback: (_) => _debouncedEventsRefresh(),
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'event_visibility',
+            callback: (_) => _debouncedEventsRefresh(),
+          );
+      _realtimeChannel!.subscribe();
+    } catch (e) {
+      debugPrint('[CalendarScreen] Realtime 구독 실패: $e');
+    }
+  }
+
+  void _unsubscribeCalendarRealtime() {
+    final ch = _realtimeChannel;
+    _realtimeChannel = null;
+    if (ch != null) {
+      try {
+        unawaited(Supabase.instance.client.removeChannel(ch));
+      } catch (_) {}
+    }
+  }
+
+  void _debouncedEventsRefresh() {
+    _realtimeDebounce?.cancel();
+    _realtimeDebounce = Timer(const Duration(milliseconds: 450), () {
+      if (mounted) unawaited(_refreshEventsQuietly());
+    });
+  }
+
+  /// 로딩 표시 없이 목록만 갱신 (Realtime·폴링·앱 복귀)
+  Future<void> _refreshEventsQuietly() async {
+    if (!mounted) return;
+    try {
+      final events = await EventService.fetchEvents(
+        AuthService.currentUser!.id, _visibleGroupIds.toList());
+      if (!mounted) return;
+      setState(() => _events = events);
+      try {
+        await NotificationService.scheduleTodayEvents(events);
+      } catch (e) {
+        debugPrint('[CalendarScreen] notification schedule error: $e');
+      }
+      try {
+        await WidgetSyncService.syncTodayEvents(events);
+      } catch (e) {
+        debugPrint('[CalendarScreen] widget sync error: $e');
+      }
+    } catch (e) {
+      debugPrint('[CalendarScreen] _refreshEventsQuietly error: $e');
+    }
   }
 
   Future<void> _loadProfile() async {
@@ -99,18 +194,27 @@ class _CalendarScreenState extends State<CalendarScreen> {
           _events = events;
           _loadingEvents = false;
         });
-        await NotificationService.scheduleTodayEvents(events);
-        await WidgetSyncService.syncTodayEvents(events);
+        try {
+          await NotificationService.scheduleTodayEvents(events);
+        } catch (e) {
+          debugPrint('[CalendarScreen] notification schedule error: $e');
+        }
+        try {
+          await WidgetSyncService.syncTodayEvents(events);
+        } catch (e) {
+          debugPrint('[CalendarScreen] widget sync error: $e');
+        }
         await _runPendingNotificationActions();
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[CalendarScreen] _loadEvents error: $e');
       if (mounted) {
         setState(() {
           _events = [];
           _loadingEvents = false;
         });
-        await WidgetSyncService.syncTodayEvents([]);
-        await NotificationService.scheduleDailySummaryFromPrefs([]);
+        try { await WidgetSyncService.syncTodayEvents([]); } catch (_) {}
+        try { await NotificationService.scheduleDailySummaryFromPrefs([]); } catch (_) {}
         await _runPendingNotificationActions();
       }
     }
@@ -159,6 +263,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return event.groupIds.any(
       (gid) => _groups.any((g) => g.id == gid && g.myRole == 'admin'),
     );
+  }
+
+  void _openReminderSettings() {
+    showDailyReminderSettingsSheet(context);
   }
 
   void _showAddMenu() {
@@ -430,56 +538,112 @@ class _CalendarScreenState extends State<CalendarScreen> {
         Expanded(
           child: _loadingEvents
               ? const Center(child: CircularProgressIndicator())
-              : selectedEvents.isEmpty
-                  ? Center(
-                      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                        const Icon(Icons.event_note, size: 48, color: Colors.grey),
-                        const SizedBox(height: 8),
-                        Text(
-                          _selectedDay != null
-                              ? '${DateFormat('M월 d일').format(_selectedDay!)} 일정이 없습니다.'
-                              : '날짜를 선택하세요.',
-                          style: const TextStyle(color: Colors.grey),
-                        ),
-                      ]),
-                    )
-                  : ListView.separated(
-                      padding: const EdgeInsets.all(12),
-                      itemCount: selectedEvents.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (_, i) {
-                        final ev = selectedEvents[i];
-                        return Card(
-                          margin: EdgeInsets.zero,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          child: ListTile(
-                            leading: Container(
-                              width: 4, height: 40,
-                              decoration: BoxDecoration(
-                                color: ev.flutterColor,
-                                borderRadius: BorderRadius.circular(2),
+              : RefreshIndicator(
+                  onRefresh: () async {
+                    await _loadEvents();
+                  },
+                  child: selectedEvents.isEmpty
+                      ? ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          children: [
+                            SizedBox(
+                              height: MediaQuery.sizeOf(context).height * 0.25,
+                              child: Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.event_note, size: 48, color: Colors.grey),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      _selectedDay != null
+                                          ? '${DateFormat('M월 d일').format(_selectedDay!)} 일정이 없습니다.'
+                                          : '날짜를 선택하세요.',
+                                      style: const TextStyle(color: Colors.grey),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      '아래로 당겨서 새로고침',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Theme.of(context).colorScheme.outline,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                            title: Text(ev.title, style: const TextStyle(fontWeight: FontWeight.w600)),
-                            subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              if (ev.creatorNickname != null)
-                                Text(ev.creatorNickname!, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                              Text(
-                                ev.isAllDay ? '하루 종일' : DateFormat('HH:mm').format(ev.startsAt),
-                                style: const TextStyle(fontSize: 12),
+                          ],
+                        )
+                      : ListView.separated(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.all(12),
+                          itemCount: selectedEvents.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 8),
+                          itemBuilder: (_, i) {
+                            final ev = selectedEvents[i];
+                            return Card(
+                              margin: EdgeInsets.zero,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              child: ListTile(
+                                leading: Container(
+                                  width: 4, height: 40,
+                                  decoration: BoxDecoration(
+                                    color: ev.flutterColor,
+                                    borderRadius: BorderRadius.circular(2),
+                                  ),
+                                ),
+                                title: Text(ev.title, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  if (ev.creatorNickname != null)
+                                    Text(ev.creatorNickname!, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                  Text(
+                                    ev.isAllDay ? '하루 종일' : DateFormat('HH:mm').format(ev.startsAt),
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                ]),
+                                onTap: () => _openEventDetail(ev),
                               ),
-                            ]),
-                            onTap: () => _openEventDetail(ev),
-                          ),
-                        );
-                      },
-                    ),
+                            );
+                          },
+                        ),
+                ),
         ),
       ]),
-      floatingActionButton: FloatingActionButton(
-        tooltip: '일정 · 그룹 이벤트',
-        onPressed: _showAddMenu,
-        child: const Icon(Icons.add),
+      floatingActionButton: Builder(
+        builder: (context) {
+          final narrow = MediaQuery.sizeOf(context).width < 420;
+          final settingsFab = FloatingActionButton.small(
+            heroTag: 'calendar_reminder_settings',
+            tooltip: '오늘 일정 요약 알림 설정',
+            onPressed: _openReminderSettings,
+            child: const Icon(Icons.settings),
+          );
+          final addFab = FloatingActionButton(
+            heroTag: 'calendar_add_menu',
+            tooltip: '일정 · 그룹 이벤트',
+            onPressed: _showAddMenu,
+            child: const Icon(Icons.add),
+          );
+          if (narrow) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                settingsFab,
+                const SizedBox(height: 12),
+                addFab,
+              ],
+            );
+          }
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              settingsFab,
+              const SizedBox(width: 12),
+              addFab,
+            ],
+          );
+        },
       ),
     );
   }

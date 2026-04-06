@@ -1,3 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="widget_description">TeamSync 일·주·월 달력과 일정</string>
 </resources>

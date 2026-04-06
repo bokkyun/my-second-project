@@ -16,10 +16,18 @@ const String _kSupabaseAnonKey = String.fromEnvironment(
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFydWN1cWRlaHJkcWdzdW5md2ZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2MTAxMzEsImV4cCI6MjA5MDE4NjEzMX0.tfu9Q3Ij9PD1bZx34ahmr-XraaQibPRXUSlsTkHG67k',
 );
 
+/// **실험 (2026-04-06):** 시스템 홈/내비와 겹침 완화 — 전체 UI를 약 1cm(48 logical px) 위로 올리고 아래는 [surface] 색 빈 줄.
+/// **원상복구:** `_TeamSyncAppState.build` 안 `MaterialApp.router`의 `builder`를 제거하고, 이 상수도 삭제하면 됩니다.
+const double _kExperimentalBottomLiftForSystemNav = 48;
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('ko_KR');
-  await NotificationService.initialize();
+  try {
+    await NotificationService.initialize();
+  } catch (e) {
+    debugPrint('NotificationService 초기화 오류(무시): $e');
+  }
   // 커스텀 HttpClient(IOClient)는 일부 기기에서 DNS/연결과 맞지 않을 수 있어 SDK 기본 클라이언트 사용
   try {
     await Supabase.initialize(
@@ -32,13 +40,45 @@ void main() async {
   setupAppRouter();
   NotificationService.attachRouter(appRouter);
   await PushMessagingService.init(appRouter);
-  await NotificationService.scheduleDailySummaryFromPrefs([]);
-  await NotificationService.handleNotificationAppLaunch();
+  try {
+    await NotificationService.scheduleDailySummaryFromPrefs([]);
+  } catch (e) {
+    debugPrint('scheduleDailySummaryFromPrefs 오류(무시): $e');
+  }
+  try {
+    await NotificationService.handleNotificationAppLaunch();
+  } catch (e) {
+    debugPrint('handleNotificationAppLaunch 오류(무시): $e');
+  }
   runApp(const TeamSyncApp());
 }
 
-class TeamSyncApp extends StatelessWidget {
+class TeamSyncApp extends StatefulWidget {
   const TeamSyncApp({super.key});
+
+  @override
+  State<TeamSyncApp> createState() => _TeamSyncAppState();
+}
+
+class _TeamSyncAppState extends State<TeamSyncApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      NotificationService.rescheduleDailySummaryAfterAppResume();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -60,6 +100,21 @@ class TeamSyncApp extends StatelessWidget {
         ),
       ),
       routerConfig: appRouter,
+      builder: (context, child) {
+        final c = child;
+        if (c == null) return const SizedBox.shrink();
+        final stripColor = Theme.of(context).colorScheme.surface;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(child: c),
+            ColoredBox(
+              color: stripColor,
+              child: SizedBox(height: _kExperimentalBottomLiftForSystemNav),
+            ),
+          ],
+        );
+      },
     );
   }
 }

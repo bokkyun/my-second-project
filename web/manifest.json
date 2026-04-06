@@ -1,12 +1,12 @@
 {
-    "name": "teamsync",
-    "short_name": "teamsync",
+    "name": "TeamSync",
+    "short_name": "TeamSync",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "background_color": "#1565C0",
+    "theme_color": "#1976D2",
+    "description": "TeamSync - 공유 스케줄 및 그룹 일정 관리",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {

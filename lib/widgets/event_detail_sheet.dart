@@ -32,12 +32,14 @@ class EventDetailSheet extends StatelessWidget {
     final canEdit = isOwner || isGroupAdmin;
     final sharedGroups = groups.where((g) => event.groupIds.contains(g.id)).toList();
 
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
+    return SafeArea(
+      top: false,
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
         Container(
           height: 4, width: 40, margin: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
@@ -138,6 +140,7 @@ class EventDetailSheet extends StatelessWidget {
           ]),
         ),
       ]),
+      ),
     );
   }
 }
