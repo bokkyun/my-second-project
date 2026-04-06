@@ -99,6 +99,19 @@
             android:textSize="16sp" />
     </LinearLayout>
 
+    <TextView
+        android:id="@+id/widget_subway_summary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/widget_chip_bg_neutral"
+        android:lineSpacingExtra="1dp"
+        android:maxLines="6"
+        android:padding="8dp"
+        android:textColor="#424242"
+        android:textSize="10sp"
+        tools:text="출근\n• 흑석역 중앙보훈병원행: 3분 후\n• 동작역 오이도행: 8분 후" />
+
     <!-- 일간 -->
     <LinearLayout
         android:id="@+id/panel_day"

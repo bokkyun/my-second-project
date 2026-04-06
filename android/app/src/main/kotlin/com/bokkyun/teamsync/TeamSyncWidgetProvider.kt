@@ -45,6 +45,14 @@ class TeamSyncWidgetProvider : HomeWidgetProvider() {
       val views = RemoteViews(context.packageName, R.layout.teamsync_widget)
 
       views.setOnClickPendingIntent(R.id.widget_brand, openPi)
+      views.setTextViewText(
+          R.id.widget_subway_summary,
+          widgetData.getString(
+              "ts_subway_summary",
+              "Set subway routes in app to show ETA.",
+          ),
+      )
+      views.setOnClickPendingIntent(R.id.widget_subway_summary, openPi)
       views.setOnClickPendingIntent(R.id.widget_period_title, openPi)
       views.setOnClickPendingIntent(R.id.btn_prev, pi(TeamSyncWidgetActionReceiver.CMD_PREV))
       views.setOnClickPendingIntent(R.id.btn_next, pi(TeamSyncWidgetActionReceiver.CMD_NEXT))

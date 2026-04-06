@@ -12,12 +12,15 @@ import '../services/event_service.dart';
 import '../services/group_service.dart';
 import '../services/notification_service.dart';
 import '../services/push_messaging_service.dart';
+import '../services/subway_arrival_service.dart';
+import '../services/subway_prefs.dart';
 import '../services/widget_sync_service.dart';
 import '../widgets/event_form_sheet.dart';
 import '../widgets/event_detail_sheet.dart';
 import '../widgets/group_event_form_sheet.dart';
 import '../widgets/group_info_sheet.dart';
 import '../widgets/daily_reminder_settings_panel.dart';
+import '../widgets/subway_commute_settings_panel.dart';
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({
@@ -25,7 +28,7 @@ class CalendarScreen extends StatefulWidget {
     this.initialOpenEventId,
   });
 
-  /// 그룹 일정 푸시 등으로 특정 일정 열기
+  /// ?? ??? ?????? ???????? ????? ??? ????
   final String? initialOpenEventId;
 
   @override
@@ -47,6 +50,8 @@ class _CalendarScreenState extends State<CalendarScreen>
   RealtimeChannel? _realtimeChannel;
   Timer? _realtimeDebounce;
   Timer? _pollTimer;
+  String _subwaySummary = '??? ?? ???? ??? ?? ??? ???.';
+  bool _loadingSubwaySummary = false;
 
   @override
   void initState() {
@@ -56,6 +61,7 @@ class _CalendarScreenState extends State<CalendarScreen>
     _pendingEventId = widget.initialOpenEventId;
     _loadAll();
     _loadProfile();
+    _refreshSubwaySummary();
     _subscribeCalendarRealtime();
     _pollTimer = Timer.periodic(const Duration(seconds: 90), (_) {
       if (mounted) unawaited(_refreshEventsQuietly());
@@ -75,6 +81,7 @@ class _CalendarScreenState extends State<CalendarScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_refreshEventsQuietly());
+      unawaited(_refreshSubwaySummary());
     }
   }
 
@@ -100,7 +107,7 @@ class _CalendarScreenState extends State<CalendarScreen>
           );
       _realtimeChannel!.subscribe();
     } catch (e) {
-      debugPrint('[CalendarScreen] Realtime 구독 실패: $e');
+      debugPrint('[CalendarScreen] Realtime ??? ??????: $e');
     }
   }
 
@@ -121,7 +128,7 @@ class _CalendarScreenState extends State<CalendarScreen>
     });
   }
 
-  /// 로딩 표시 없이 목록만 갱신 (Realtime·폴링·앱 복귀)
+  /// ????? ?????? ???? ???? ???? (Realtime??????? ???)
   Future<void> _refreshEventsQuietly() async {
     if (!mounted) return;
     try {
@@ -139,6 +146,7 @@ class _CalendarScreenState extends State<CalendarScreen>
       } catch (e) {
         debugPrint('[CalendarScreen] widget sync error: $e');
       }
+      unawaited(_refreshSubwaySummary());
     } catch (e) {
       debugPrint('[CalendarScreen] _refreshEventsQuietly error: $e');
     }
@@ -204,6 +212,7 @@ class _CalendarScreenState extends State<CalendarScreen>
         } catch (e) {
           debugPrint('[CalendarScreen] widget sync error: $e');
         }
+        unawaited(_refreshSubwaySummary());
         await _runPendingNotificationActions();
       }
     } catch (e) {
@@ -220,7 +229,7 @@ class _CalendarScreenState extends State<CalendarScreen>
     }
   }
 
-  /// 알림 딥링크: 데이터 로드 후 상세 표시
+  /// ???? ?????: ????? ????? ??? ?????? ??????
   Future<void> _runPendingNotificationActions() async {
     if (!mounted) return;
 
@@ -257,7 +266,7 @@ class _CalendarScreenState extends State<CalendarScreen>
     }).toList();
   }
 
-  /// 이벤트에 대해 현재 유저가 그룹 관리자인지 확인
+  /// ???????? ?????? ?????? ??????? ?? ????????? ????
   bool _isAdminOfEvent(CalendarEvent event) {
     if (event.creatorId == AuthService.currentUser!.id) return false;
     return event.groupIds.any(
@@ -267,6 +276,37 @@ class _CalendarScreenState extends State<CalendarScreen>
 
   void _openReminderSettings() {
     showDailyReminderSettingsSheet(context);
+  }
+
+  void _openSubwaySettings() {
+    showSubwayCommuteSettingsSheet(context).then((_) {
+      if (mounted) {
+        unawaited(_refreshSubwaySummary());
+      }
+    });
+  }
+
+  Future<void> _refreshSubwaySummary() async {
+    if (_loadingSubwaySummary) return;
+    _loadingSubwaySummary = true;
+    try {
+      await WidgetSyncService.syncSubwayOnly();
+      // ? ??? ?? ??? ???? ?? ???? ?? ????? ?? ????.
+      // ???? ?? ? ??? ???? fallback ???? ????.
+      final config = await SubwayPrefs.load();
+      final summary = await SubwayArrivalService.buildSummary(config);
+      if (mounted) {
+        setState(() => _subwaySummary = summary);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _subwaySummary = '??? ?? ??? ???? ?????.';
+        });
+      }
+    } finally {
+      _loadingSubwaySummary = false;
+    }
   }
 
   void _showAddMenu() {
@@ -279,8 +319,8 @@ class _CalendarScreenState extends State<CalendarScreen>
           children: [
             ListTile(
               leading: Icon(Icons.event, color: Theme.of(context).colorScheme.primary),
-              title: const Text('일정 추가'),
-              subtitle: const Text('나만 또는 선택한 그룹에 공유'),
+              title: const Text('??? ????'),
+              subtitle: const Text('????? ?????? ????????? ????? ????'),
               onTap: () {
                 Navigator.pop(ctx);
                 _openEventForm(date: _selectedDay);
@@ -288,8 +328,8 @@ class _CalendarScreenState extends State<CalendarScreen>
             ),
             ListTile(
               leading: Icon(Icons.groups, color: Theme.of(context).colorScheme.secondary),
-              title: const Text('그룹 이벤트 만들기'),
-              subtitle: const Text('선택한 그룹의 모든 구성원 캘린더에 등록 · 푸시 알림'),
+              title: const Text('?? ????? ??????'),
+              subtitle: const Text('????????? ???? ???? ??????? ???????? ???? ? ?????? ????'),
               onTap: () {
                 Navigator.pop(ctx);
                 _openGroupEventForm();
@@ -304,7 +344,7 @@ class _CalendarScreenState extends State<CalendarScreen>
   void _openGroupEventForm() {
     if (_groups.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('먼저 그룹에 참여해 주세요.')),
+        const SnackBar(content: Text('??? ????? ??????? ???????.')),
       );
       return;
     }
@@ -362,7 +402,7 @@ class _CalendarScreenState extends State<CalendarScreen>
           await _loadEvents();
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(editEvent != null ? '일정이 수정되었습니다.' : '일정이 저장되었습니다!')));
+              SnackBar(content: Text(editEvent != null ? '???? ???????????????????.' : '???? ???????????????????!')));
           }
         },
       ),
@@ -387,15 +427,15 @@ class _CalendarScreenState extends State<CalendarScreen>
           final confirmed = await showDialog<bool>(
             context: context,
             builder: (_) => AlertDialog(
-              title: const Text('일정 삭제'),
-              content: Text('\'${event.title}\' 일정을 삭제하시겠습니까?'),
+              title: const Text('??? ?????'),
+              content: Text('\'${event.title}\' ????? ?????????????????????'),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
+                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('????')),
                 ElevatedButton(
                   onPressed: () => Navigator.pop(context, true),
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-                  child: const Text('삭제'),
+                  child: const Text('?????'),
                 ),
               ],
             ),
@@ -407,7 +447,7 @@ class _CalendarScreenState extends State<CalendarScreen>
             );
             await _loadEvents();
             if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('일정이 삭제되었습니다.')));
+              const SnackBar(content: Text('???? ???????????????????.')));
           }
         },
       ),
@@ -425,19 +465,19 @@ class _CalendarScreenState extends State<CalendarScreen>
           await GroupService.leaveGroup(gid, AuthService.currentUser!.id);
           await _loadAll();
           if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('그룹에서 탈퇴했습니다.')));
+            const SnackBar(content: Text('???????? ??????????????????.')));
         },
         onDelete: (gid) async {
           await GroupService.deleteGroup(gid, AuthService.currentUser!.id);
           await _loadAll();
           if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('그룹이 삭제되었습니다.')));
+            const SnackBar(content: Text('??? ???????????????????.')));
         },
         onChangeAdmin: (gid, newAdminUserId) async {
           await GroupService.changeGroupAdmin(gid, newAdminUserId, AuthService.currentUser!.id);
           await _loadAll();
           if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('관리자가 변경되었습니다.')));
+            const SnackBar(content: Text('???????? ?????????????????.')));
         },
         onChangePassword: (gid, newPassword) async {
           await GroupService.changeGroupPassword(gid, AuthService.currentUser!.id, newPassword);
@@ -462,7 +502,7 @@ class _CalendarScreenState extends State<CalendarScreen>
         actions: [
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.red),
-            tooltip: '로그아웃',
+            tooltip: '?????????',
             onPressed: () async {
               await PushMessagingService.clearTokenForLogout();
               await AuthService.signOut();
@@ -484,7 +524,7 @@ class _CalendarScreenState extends State<CalendarScreen>
       ),
       drawer: _buildDrawer(),
       body: Column(children: [
-        // 캘린더
+        // ?????
         TableCalendar<CalendarEvent>(
           locale: 'ko_KR',
           firstDay: DateTime(2020),
@@ -534,7 +574,7 @@ class _CalendarScreenState extends State<CalendarScreen>
 
         const Divider(height: 1),
 
-        // 선택된 날짜 이벤트 목록
+        // ???????? ????? ????? ??
         Expanded(
           child: _loadingEvents
               ? const Center(child: CircularProgressIndicator())
@@ -556,13 +596,13 @@ class _CalendarScreenState extends State<CalendarScreen>
                                     const SizedBox(height: 8),
                                     Text(
                                       _selectedDay != null
-                                          ? '${DateFormat('M월 d일').format(_selectedDay!)} 일정이 없습니다.'
-                                          : '날짜를 선택하세요.',
+                                          ? '${DateFormat('M??? d?').format(_selectedDay!)} ???? ????????????.'
+                                          : '?????? ???????????????.',
                                       style: const TextStyle(color: Colors.grey),
                                     ),
                                     const SizedBox(height: 8),
                                     Text(
-                                      '아래로 당겨서 새로고침',
+                                      '???????? ??????? ???????',
                                       style: TextStyle(
                                         fontSize: 12,
                                         color: Theme.of(context).colorScheme.outline,
@@ -597,7 +637,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                                   if (ev.creatorNickname != null)
                                     Text(ev.creatorNickname!, style: const TextStyle(fontSize: 12, color: Colors.grey)),
                                   Text(
-                                    ev.isAllDay ? '하루 종일' : DateFormat('HH:mm').format(ev.startsAt),
+                                    ev.isAllDay ? '???? ???' : DateFormat('HH:mm').format(ev.startsAt),
                                     style: const TextStyle(fontSize: 12),
                                   ),
                                 ]),
@@ -608,19 +648,46 @@ class _CalendarScreenState extends State<CalendarScreen>
                         ),
                 ),
         ),
+        const Divider(height: 1),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+          color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.35),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.directions_subway, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _loadingSubwaySummary ? '??? ?? ?? ?? ?...' : _subwaySummary,
+                  style: const TextStyle(fontSize: 12, height: 1.3),
+                  maxLines: 5,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
       ]),
       floatingActionButton: Builder(
         builder: (context) {
           final narrow = MediaQuery.sizeOf(context).width < 420;
+          final subwayFab = FloatingActionButton.small(
+            heroTag: 'calendar_subway_settings',
+            tooltip: 'Subway commute settings',
+            onPressed: _openSubwaySettings,
+            child: const Icon(Icons.directions_subway),
+          );
           final settingsFab = FloatingActionButton.small(
             heroTag: 'calendar_reminder_settings',
-            tooltip: '오늘 일정 요약 알림 설정',
+            tooltip: '?????? ??? ?????? ???? ?????',
             onPressed: _openReminderSettings,
             child: const Icon(Icons.settings),
           );
           final addFab = FloatingActionButton(
             heroTag: 'calendar_add_menu',
-            tooltip: '일정 · 그룹 이벤트',
+            tooltip: '??? ? ?? ?????',
             onPressed: _showAddMenu,
             child: const Icon(Icons.add),
           );
@@ -629,7 +696,14 @@ class _CalendarScreenState extends State<CalendarScreen>
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                settingsFab,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    subwayFab,
+                    const SizedBox(width: 12),
+                    settingsFab,
+                  ],
+                ),
                 const SizedBox(height: 12),
                 addFab,
               ],
@@ -638,6 +712,8 @@ class _CalendarScreenState extends State<CalendarScreen>
           return Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              subwayFab,
+              const SizedBox(width: 12),
               settingsFab,
               const SizedBox(width: 12),
               addFab,
@@ -657,12 +733,12 @@ class _CalendarScreenState extends State<CalendarScreen>
             child: Row(children: [
               Icon(Icons.calendar_month, color: Theme.of(context).colorScheme.primary),
               const SizedBox(width: 8),
-              Text('내 그룹', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16,
+              Text('??? ??', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16,
                   color: Theme.of(context).colorScheme.primary)),
               const Spacer(),
               IconButton(
                 icon: const Icon(Icons.add),
-                tooltip: '그룹 생성',
+                tooltip: '?? ??????',
                 onPressed: () { Navigator.pop(context); context.push('/groups/create'); },
               ),
             ]),
@@ -677,7 +753,7 @@ class _CalendarScreenState extends State<CalendarScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                const Text('속한 그룹이 없습니다.', style: TextStyle(color: Colors.grey)),
+                const Text('?????? ??? ????????????.', style: TextStyle(color: Colors.grey)),
                 const SizedBox(height: 12),
                 FilledButton.icon(
                   onPressed: () {
@@ -685,20 +761,20 @@ class _CalendarScreenState extends State<CalendarScreen>
                     context.push('/groups/create');
                   },
                   icon: const Icon(Icons.add_circle_outline),
-                  label: const Text('새 그룹 만들기'),
+                  label: const Text('??? ?? ??????'),
                 ),
                 const SizedBox(height: 8),
                 TextButton.icon(
                   onPressed: () { Navigator.pop(context); context.push('/groups/join'); },
                   icon: const Icon(Icons.group_add),
-                  label: const Text('그룹 가입하기'),
+                  label: const Text('?? ?????????'),
                 ),
               ]),
             )
           else ...[
-            // 전체 체크박스
+            // ??? ???????
             CheckboxListTile(
-              title: const Text('전체', style: TextStyle(fontWeight: FontWeight.w600)),
+              title: const Text('???', style: TextStyle(fontWeight: FontWeight.w600)),
               value: _visibleGroupIds.length == _groups.length
                   ? true
                   : _visibleGroupIds.isEmpty
@@ -747,17 +823,17 @@ class _CalendarScreenState extends State<CalendarScreen>
           const Divider(height: 1),
           ListTile(
             leading: Icon(Icons.add_circle_outline, color: Theme.of(context).colorScheme.primary),
-            title: const Text('새 그룹 만들기'),
+            title: const Text('??? ?? ??????'),
             onTap: () { Navigator.pop(context); context.push('/groups/create'); },
           ),
           ListTile(
             leading: const Icon(Icons.group_add),
-            title: const Text('그룹 가입'),
+            title: const Text('?? ?????'),
             onTap: () { Navigator.pop(context); context.push('/groups/join'); },
           ),
           ListTile(
             leading: const Icon(Icons.person),
-            title: const Text('프로필 설정'),
+            title: const Text('???????? ?????'),
             onTap: () { Navigator.pop(context); context.push('/profile'); },
           ),
         ]),

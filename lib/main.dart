@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'router.dart' show appRouter, setupAppRouter;
 import 'services/notification_service.dart';
 import 'services/push_messaging_service.dart';
+import 'services/widget_sync_service.dart';
 
 /// 빌드 시 `--dart-define=SUPABASE_URL=...` / `SUPABASE_ANON_KEY=...` 로 덮어쓸 수 있습니다.
 const String _kSupabaseUrl = String.fromEnvironment(
@@ -50,6 +51,11 @@ void main() async {
   } catch (e) {
     debugPrint('handleNotificationAppLaunch 오류(무시): $e');
   }
+  try {
+    await WidgetSyncService.syncSubwayOnly();
+  } catch (e) {
+    debugPrint('Widget 지하철 동기화 오류(무시): $e');
+  }
   runApp(const TeamSyncApp());
 }
 
@@ -77,6 +83,7 @@ class _TeamSyncAppState extends State<TeamSyncApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       NotificationService.rescheduleDailySummaryAfterAppResume();
+      WidgetSyncService.syncSubwayOnly();
     }
   }
 

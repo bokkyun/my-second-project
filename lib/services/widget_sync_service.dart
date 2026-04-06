@@ -5,6 +5,8 @@ import 'package:home_widget/home_widget.dart';
 import 'package:intl/intl.dart';
 
 import '../models/event.dart';
+import 'subway_arrival_service.dart';
+import 'subway_prefs.dart';
 
 /// Android 홈 화면 위젯 데이터 동기화 (home_widget)
 ///
@@ -72,6 +74,21 @@ class WidgetSyncService {
     final anchorMs = today.millisecondsSinceEpoch;
     await HomeWidget.saveWidgetData<int>('ts_anchor_ms', anchorMs);
 
+    await _syncSubwaySummaryData();
     await HomeWidget.updateWidget(qualifiedAndroidName: _qualifiedProvider);
+  }
+
+  static Future<void> syncSubwayOnly() async {
+    if (kIsWeb) return;
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+
+    await _syncSubwaySummaryData();
+    await HomeWidget.updateWidget(qualifiedAndroidName: _qualifiedProvider);
+  }
+
+  static Future<void> _syncSubwaySummaryData() async {
+    final config = await SubwayPrefs.load();
+    final summary = await SubwayArrivalService.buildSummary(config);
+    await HomeWidget.saveWidgetData<String>('ts_subway_summary', summary);
   }
 }
