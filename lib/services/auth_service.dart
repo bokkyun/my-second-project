@@ -27,6 +27,10 @@ bool _isRetryableNetworkError(Object e) {
 class AuthService {
   static final _client = Supabase.instance.client;
 
+  /// Google Cloud Console → **웹 애플리케이션** OAuth 클라이언트 ID (`web/index.html` meta와 동일).
+  static const _googleWebClientId =
+      '71423794065-a0csmmroi6e370f2hj0n3cghjt6t7qdh.apps.googleusercontent.com';
+
   static User? get currentUser => _client.auth.currentUser;
 
   static bool isValidEmail(String v) {
@@ -77,11 +81,12 @@ class AuthService {
   }
 
   /// Google 소셜 로그인
-  /// serverClientId: Google Cloud Console의 웹 OAuth 클라이언트 ID
+  /// 웹: [GoogleSignIn]에 `clientId`가 필요합니다. `web/index.html`의 meta와 동일한 ID를 쓰세요.
   static Future<AuthResponse> signInWithGoogle() async {
-    const webClientId = 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com'; // TODO: 실제 웹 클라이언트 ID로 교체
-
-    final googleSignIn = GoogleSignIn(serverClientId: webClientId);
+    final googleSignIn = GoogleSignIn(
+      clientId: kIsWeb ? _googleWebClientId : null,
+      serverClientId: _googleWebClientId,
+    );
     final googleUser = await googleSignIn.signIn();
 
     if (googleUser == null) throw Exception('Google 로그인이 취소되었습니다.');

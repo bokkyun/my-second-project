@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- 서울시 오픈API는 HTTP(swopenapi / openapi)를 사용하는 경우가 있어 도메인만 허용 -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">swopenapi.seoul.go.kr</domain>
+        <domain includeSubdomains="false">openapi.seoul.go.kr</domain>
+    </domain-config>
+</network-security-config>

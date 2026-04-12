@@ -19,6 +19,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   List<Group> _groups = [];
   bool _loading = true;
   bool _saving = false;
+  bool _deletingAccount = false;
   @override
   void initState() {
     super.initState();
@@ -131,6 +132,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _signOut() async {
     await AuthService.signOut();
     if (mounted) context.go('/login');
+  }
+
+  Future<void> _deleteAccount() async {
+    final email = AuthService.currentUser?.email ?? '';
+    final confirmed = await _showConfirmDialog(
+      '회원 탈퇴',
+      '정말 탈퇴하시겠습니까?\n모든 일정/그룹 데이터가 삭제되며 복구할 수 없습니다.\n\n계속하려면 확인을 누르세요.',
+      confirmLabel: '탈퇴',
+      isDanger: true,
+    );
+    if (!confirmed) return;
+
+    if (!mounted) return;
+    setState(() => _deletingAccount = true);
+    try {
+      await AuthService.deleteMyAccount();
+      await AuthService.signOut();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${email.isEmpty ? "계정" : email} 탈퇴가 완료되었습니다.')),
+      );
+      context.go('/login');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('회원 탈퇴 실패: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _deletingAccount = false);
+    }
   }
 
   @override
@@ -283,6 +314,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             icon: const Icon(Icons.logout, color: Colors.red),
                             label: const Text('로그아웃', style: TextStyle(color: Colors.red)),
                             style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.red)),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _deletingAccount ? null : _deleteAccount,
+                            icon: _deletingAccount
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.person_remove),
+                            label: Text(_deletingAccount ? '탈퇴 처리 중...' : '회원 탈퇴'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red,
+                              foregroundColor: Colors.white,
+                            ),
                           ),
                         ),
                       ]),

@@ -12,34 +12,36 @@ class SignupScreen extends StatefulWidget {
 }
 
 class _SignupScreenState extends State<SignupScreen> {
-  final _usernameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
   final _nicknameCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
   bool _showPassword = false;
   bool _loading = false;
+  bool _resendingVerification = false;
   String _error = '';
   bool _success = false;
+  String _signedUpEmail = '';
 
   @override
   void dispose() {
-    _usernameCtrl.dispose();
+    _emailCtrl.dispose();
     _nicknameCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
     super.dispose();
   }
 
-  bool _isValidUsername(String v) => RegExp(r'^[a-zA-Z0-9_-]{3,20}$').hasMatch(v);
-
   Future<void> _submit() async {
-    final username = _usernameCtrl.text.trim();
+    final email = _emailCtrl.text.trim();
     final password = _passwordCtrl.text;
     final confirm = _confirmCtrl.text;
-    final nickname = _nicknameCtrl.text.trim();
+    final nickname = _nicknameCtrl.text.trim().isEmpty
+        ? email.split('@').first
+        : _nicknameCtrl.text.trim();
 
-    if (!_isValidUsername(username)) {
-      setState(() => _error = '아이디는 3~20자의 영문, 숫자, _(밑줄), -(하이픈)만 사용 가능합니다.');
+    if (!AuthService.isValidEmail(email)) {
+      setState(() => _error = '올바른 이메일 형식을 입력해주세요.');
       return;
     }
     if (password != confirm) {
@@ -53,13 +55,19 @@ class _SignupScreenState extends State<SignupScreen> {
 
     setState(() { _error = ''; _loading = true; });
     try {
-      await AuthService.signUp(username, password, nickname);
-      if (mounted) setState(() { _success = true; _loading = false; });
+      await AuthService.signUp(email, password, nickname);
+      if (mounted) {
+        setState(() {
+          _success = true;
+          _signedUpEmail = email;
+          _loading = false;
+        });
+      }
     } on AuthException catch (e) {
       final net = friendlyNetworkMessage(e.message);
       String msg = net ??
-          (e.message.contains('already registered')
-              ? '이미 사용 중인 아이디입니다.'
+          (e.message.contains('already registered') || e.message.contains('already exists')
+              ? '이미 가입된 이메일입니다.'
               : '회원가입에 실패했습니다. 다시 시도해주세요.');
       setState(() { _error = msg; _loading = false; });
     } catch (e) {
@@ -105,7 +113,41 @@ class _SignupScreenState extends State<SignupScreen> {
       const Icon(Icons.check_circle, color: Colors.green, size: 52),
       const SizedBox(height: 12),
       const Text('회원가입이 완료되었습니다!', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+      const SizedBox(height: 8),
+      const Text('인증 메일을 확인한 뒤 로그인해 주세요.',
+          textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
       const SizedBox(height: 20),
+      if (_signedUpEmail.isNotEmpty) ...[
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton(
+            onPressed: _resendingVerification
+                ? null
+                : () async {
+                    setState(() => _resendingVerification = true);
+                    try {
+                      await AuthService.resendSignupEmail(_signedUpEmail);
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('인증 메일을 다시 보냈습니다. 메일함을 확인해주세요.'),
+                        ),
+                      );
+                    } on AuthException catch (e) {
+                      if (!mounted) return;
+                      setState(() => _error = '인증 메일 재전송 실패: ${e.message}');
+                    } catch (e) {
+                      if (!mounted) return;
+                      setState(() => _error = '인증 메일 재전송 오류: $e');
+                    } finally {
+                      if (mounted) setState(() => _resendingVerification = false);
+                    }
+                  },
+            child: Text(_resendingVerification ? '재전송 중...' : '인증 메일 다시 보내기'),
+          ),
+        ),
+        const SizedBox(height: 12),
+      ],
       SizedBox(
         width: double.infinity,
         child: ElevatedButton(
@@ -144,19 +186,20 @@ class _SignupScreenState extends State<SignupScreen> {
       ],
 
       TextField(
-        controller: _usernameCtrl,
+        controller: _emailCtrl,
+        keyboardType: TextInputType.emailAddress,
+        autofillHints: const [AutofillHints.email],
         decoration: const InputDecoration(
-          labelText: '아이디',
-          helperText: '3~20자, 영문·숫자·_(밑줄)·-(하이픈) 사용 가능',
+          labelText: '이메일',
+          helperText: '인증 메일을 받을 주소를 입력하세요',
         ),
-        maxLength: 20,
       ),
       const SizedBox(height: 12),
       TextField(
         controller: _nicknameCtrl,
         decoration: const InputDecoration(
           labelText: '닉네임 (선택)',
-          helperText: '비워두면 아이디가 닉네임으로 사용됩니다',
+          helperText: '비워두면 이메일 앞부분이 닉네임으로 사용됩니다',
           counterText: '',
         ),
         maxLength: 20,

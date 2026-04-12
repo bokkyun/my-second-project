@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../models/event.dart';
+import '../models/subway_display_row.dart';
 import '../models/group.dart';
 import '../services/auth_service.dart';
 import '../services/event_service.dart';
@@ -50,7 +52,8 @@ class _CalendarScreenState extends State<CalendarScreen>
   RealtimeChannel? _realtimeChannel;
   Timer? _realtimeDebounce;
   Timer? _pollTimer;
-  String _subwaySummary = '지하철 설정 버튼에서 출퇴근 역을 저장해 주세요.';
+  List<SubwayDisplayRow> _subwayRows = [];
+  String _subwayHint = '지하철 설정에서 역을 저장해 주세요.';
   bool _loadingSubwaySummary = false;
 
   @override
@@ -288,25 +291,137 @@ class _CalendarScreenState extends State<CalendarScreen>
 
   Future<void> _refreshSubwaySummary() async {
     if (_loadingSubwaySummary) return;
-    _loadingSubwaySummary = true;
+    setState(() => _loadingSubwaySummary = true);
     try {
       await WidgetSyncService.syncSubwayOnly();
-      // ? ??? ?? ??? ???? ?? ???? ?? ????? ?? ????.
-      // ???? ?? ? ??? ???? fallback ???? ????.
       final config = await SubwayPrefs.load();
-      final summary = await SubwayArrivalService.buildSummary(config);
+      if (!mounted) return;
+      if (!config.hasAny) {
+        setState(() {
+          _subwayRows = [];
+          _subwayHint = '지하철 설정에서 역을 저장해 주세요.';
+        });
+        return;
+      }
+      final rows = await SubwayArrivalService.buildDisplayRows(config);
       if (mounted) {
-        setState(() => _subwaySummary = summary);
+        setState(() {
+          _subwayRows = rows;
+          _subwayHint = '';
+        });
       }
     } catch (_) {
       if (mounted) {
         setState(() {
-          _subwaySummary = '지하철 도착 정보를 가져오지 못했습니다.';
+          _subwayRows = [];
+          _subwayHint = '도착 정보를 불러오지 못했습니다.';
         });
       }
     } finally {
-      _loadingSubwaySummary = false;
+      if (mounted) {
+        setState(() => _loadingSubwaySummary = false);
+      }
     }
+  }
+
+  Widget _buildSubwayPanel(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (_loadingSubwaySummary) {
+      return Row(
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: scheme.primary,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '도착 정보 불러오는 중…',
+            style: TextStyle(fontSize: 12, color: scheme.outline),
+          ),
+        ],
+      );
+    }
+    if (_subwayRows.isEmpty) {
+      return Text(
+        _subwayHint,
+        style: TextStyle(fontSize: 12, height: 1.2, color: scheme.onSurfaceVariant),
+      );
+    }
+    final maxH = math.min(220.0, MediaQuery.sizeOf(context).height * 0.24);
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxH),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: _subwayRows.map((r) => _buildSubwayRowTile(context, r)).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubwayRowTile(BuildContext context, SubwayDisplayRow r) {
+    final scheme = Theme.of(context).colorScheme;
+    if (r.isSection) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 2, bottom: 2),
+        child: Text(
+          r.sectionLabel ?? '',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 12,
+            height: 1.15,
+            color: scheme.primary,
+          ),
+        ),
+      );
+    }
+    final accent = r.accentColor(scheme);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 2,
+            height: 14,
+            decoration: BoxDecoration(
+              color: accent,
+              borderRadius: BorderRadius.circular(1),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.2,
+                  color: scheme.onSurface,
+                ),
+                children: [
+                  TextSpan(
+                    text: '${r.station} ',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  TextSpan(
+                    text: '${r.terminal} ',
+                    style: TextStyle(color: scheme.onSurfaceVariant),
+                  ),
+                  TextSpan(
+                    text: r.eta,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showAddMenu() {
@@ -651,75 +766,47 @@ class _CalendarScreenState extends State<CalendarScreen>
         const Divider(height: 1),
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+          padding: const EdgeInsets.fromLTRB(12, 6, 72, 6),
           color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.35),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.directions_subway, size: 18),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  _loadingSubwaySummary ? '지하철 도착 정보 확인 중...' : _subwaySummary,
-                  style: const TextStyle(fontSize: 12, height: 1.3),
-                  maxLines: 5,
-                  overflow: TextOverflow.ellipsis,
-                ),
+              Icon(
+                Icons.directions_subway,
+                size: 18,
+                color: Theme.of(context).colorScheme.primary,
               ),
+              const SizedBox(width: 8),
+              Expanded(child: _buildSubwayPanel(context)),
             ],
           ),
         ),
       ]),
-      floatingActionButton: Builder(
-        builder: (context) {
-          final narrow = MediaQuery.sizeOf(context).width < 420;
-          final subwayFab = FloatingActionButton.small(
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FloatingActionButton.small(
             heroTag: 'calendar_subway_settings',
-            tooltip: 'Subway commute settings',
+            tooltip: '출퇴근 지하철 설정',
             onPressed: _openSubwaySettings,
             child: const Icon(Icons.directions_subway),
-          );
-          final settingsFab = FloatingActionButton.small(
+          ),
+          const SizedBox(height: 10),
+          FloatingActionButton.small(
             heroTag: 'calendar_reminder_settings',
             tooltip: '오늘 일정 요약 알림 설정',
             onPressed: _openReminderSettings,
             child: const Icon(Icons.settings),
-          );
-          final addFab = FloatingActionButton(
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton(
             heroTag: 'calendar_add_menu',
             tooltip: '일정 · 그룹 이벤트',
             onPressed: _showAddMenu,
             child: const Icon(Icons.add),
-          );
-          if (narrow) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    subwayFab,
-                    const SizedBox(width: 12),
-                    settingsFab,
-                  ],
-                ),
-                const SizedBox(height: 12),
-                addFab,
-              ],
-            );
-          }
-          return Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              subwayFab,
-              const SizedBox(width: 12),
-              settingsFab,
-              const SizedBox(width: 12),
-              addFab,
-            ],
-          );
-        },
+          ),
+        ],
       ),
     );
   }

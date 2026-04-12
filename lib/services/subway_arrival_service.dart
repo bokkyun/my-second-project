@@ -1,147 +1,194 @@
-﻿import 'dart:convert';
+﻿import 'dart:async';
 
-import 'package:http/http.dart' as http;
+import 'package:timezone/timezone.dart' as tz;
 
+import '../models/subway_display_row.dart';
 import 'subway_prefs.dart';
+import 'subway_schedule_service.dart';
 
+/// 출퇴근 경로별 지하철 **시간표** 기준 다음 도착 안내 (공공데이터 getTrainSch)
 class SubwayArrivalService {
   SubwayArrivalService._();
 
-  // dart-define로 키를 덮어쓸 수 있고, 없으면 현재 제공된 키를 기본값으로 사용합니다.
-  static const _apiKey = String.fromEnvironment(
-    'SEOUL_SUBWAY_API_KEY',
-    defaultValue: '506378455262636839386d76677a73',
-  );
-  static const _base =
-      'https://swopenapi.seoul.go.kr/api/subway/$_apiKey/json/realtimeStationArrival/0/20/';
-
+  /// 홈 위젯 등 텍스트 전용(간단 문자열)
   static Future<String> buildSummary(SubwayCommuteConfig config) async {
-    if (!config.hasAny) {
-      return '지하철 설정 버튼에서 출퇴근 역을 저장해 주세요.';
+    final rows = await buildDisplayRows(config);
+    if (rows.isEmpty) {
+      return '지하철 설정에서 역을 저장해 주세요.';
     }
-
-    final lines = <String>[];
-    if (config.goToWork.isNotEmpty) {
-      lines.add('출근');
-      lines.addAll(await _forLegs(config.goToWork));
+    final buf = StringBuffer();
+    for (final r in rows) {
+      if (r.isSection) {
+        if (buf.isNotEmpty) buf.writeln();
+        buf.writeln(r.sectionLabel);
+        continue;
+      }
+      buf.writeln(
+        '${r.station} ${r.terminal} ${r.eta}',
+      );
     }
-    if (config.comeHome.isNotEmpty) {
-      if (lines.isNotEmpty) lines.add('');
-      lines.add('퇴근');
-      lines.addAll(await _forLegs(config.comeHome));
-    }
-    return lines.join('\n').trim();
+    return buf.toString().trim();
   }
 
-  static Future<List<String>> _forLegs(List<SubwayLeg> legs) async {
-    final out = <String>[];
-    for (final leg in legs) {
-      out.addAll(await _arrivalLines(leg));
+  /// UI용(색·줄바꿈)
+  static Future<List<SubwayDisplayRow>> buildDisplayRows(
+    SubwayCommuteConfig config,
+  ) async {
+    if (!config.hasAny) return const [];
+
+    final out = <SubwayDisplayRow>[];
+    if (config.goToWork.isNotEmpty) {
+      out.add(SubwayDisplayRow.section('출근'));
+      for (final leg in config.goToWork) {
+        out.addAll(await _rowsForLeg(leg));
+      }
+    }
+    if (config.comeHome.isNotEmpty) {
+      out.add(SubwayDisplayRow.section('퇴근'));
+      for (final leg in config.comeHome) {
+        out.addAll(await _rowsForLeg(leg));
+      }
     }
     return out;
   }
 
-  static Future<List<String>> _arrivalLines(SubwayLeg leg) async {
+  static Future<List<SubwayDisplayRow>> _rowsForLeg(SubwayLeg leg) async {
     try {
-      final uri = Uri.parse('$_base${Uri.encodeComponent(leg.station)}');
-      final res = await http.get(uri).timeout(const Duration(seconds: 4));
-      if (res.statusCode != 200) {
-        return ['• ${leg.station}: 정보 없음'];
+      if (leg.line.trim().isEmpty) {
+        return [
+          SubwayDisplayRow.line(
+            station: leg.station,
+            trackShort: '',
+            terminal: '',
+            eta: '노선을 선택해 주세요',
+            trackKind: SubwayTrackKind.other,
+          ),
+        ];
       }
 
-      final body = jsonDecode(res.body) as Map<String, dynamic>;
-      final status = body['status'];
-      final code = (body['code'] as String? ?? '').trim();
-      if (status is num && status >= 400 || code.startsWith('ERROR-')) {
-        if (code == 'ERROR-338') {
-          return ['• ${leg.station}: 실시간 API 권한 없음'];
+      final items = await SubwayScheduleService.fetchAllForStation(
+        lineNm: leg.line,
+        stnNm: leg.station,
+      );
+
+      if (items.isEmpty) {
+        return [
+          SubwayDisplayRow.line(
+            station: leg.station,
+            trackShort: '',
+            terminal: '',
+            eta: '시간표 없음',
+            trackKind: SubwayTrackKind.other,
+          ),
+        ];
+      }
+
+      final now = SubwayScheduleService.nowSeoul();
+
+      final byKey = <String, _ScheduledCandidate>{};
+      for (final m in items) {
+        final rawT = SubwayScheduleService.arrivalAtStation(m);
+        if (rawT == null) continue;
+
+        final terminal = SubwayScheduleService.terminalFromItem(m);
+        final updn = SubwayScheduleService.updnFromItem(m);
+        final key = '$updn|$terminal';
+
+        final nextT = _nextOccurrence(rawT, now);
+        final cur = byKey[key];
+        if (cur == null || nextT.isBefore(cur.time)) {
+          byKey[key] = _ScheduledCandidate(
+            time: nextT,
+            updn: updn,
+            terminal: terminal,
+          );
         }
-        return ['• ${leg.station}: API 오류($code)'];
-      }
-      final list = (body['realtimeArrivalList'] as List?) ?? const [];
-      if (list.isEmpty) {
-        return ['• ${leg.station}: 운행 정보 없음'];
       }
 
-      final wantedSubwayId = _subwayIdFromLine(leg.line);
-      final byDirection = <String, Map<String, dynamic>>{};
-      for (final row in list.whereType<Map>()) {
-        final m = row.cast<String, dynamic>();
-        final subwayId = (m['subwayId'] as String? ?? '').trim();
-        if (wantedSubwayId != null && subwayId != wantedSubwayId) continue;
+      if (byKey.isEmpty) {
+        return [
+          SubwayDisplayRow.line(
+            station: leg.station,
+            trackShort: '',
+            terminal: '',
+            eta: '열차 시각 없음',
+            trackKind: SubwayTrackKind.other,
+          ),
+        ];
+      }
 
-        final direction = _extractDirection(
-          (m['trainLineNm'] as String? ?? '').trim(),
-          (m['updnLine'] as String? ?? '').trim(),
+      final keys = byKey.keys.toList()
+        ..sort((a, b) {
+          final upA = SubwayScheduleService.kindFromUpdn(
+                a.split('|').first,
+                leg.line,
+              ) ==
+              SubwayTrackKind.up;
+          final upB = SubwayScheduleService.kindFromUpdn(
+                b.split('|').first,
+                leg.line,
+              ) ==
+              SubwayTrackKind.up;
+          if (upA != upB) return upA ? -1 : 1;
+          return a.compareTo(b);
+        });
+
+      return keys.map((k) {
+        final c = byKey[k]!;
+        final trackShort =
+            SubwayScheduleService.shortTrackLabelForQuery(c.updn, leg.line);
+        final kind = SubwayScheduleService.kindFromUpdn(c.updn, leg.line);
+        final eta = SubwayScheduleService.formatEta(c.time, now);
+        return SubwayDisplayRow.line(
+          station: leg.station,
+          trackShort: trackShort,
+          terminal: c.terminal.isEmpty ? '—' : c.terminal,
+          eta: eta,
+          trackKind: kind,
         );
-        if (direction.isEmpty) continue;
-
-        final current = byDirection[direction];
-        if (current == null) {
-          byDirection[direction] = m;
-          continue;
-        }
-        final oldSec = int.tryParse((current['barvlDt'] as String? ?? '').trim());
-        final newSec = int.tryParse((m['barvlDt'] as String? ?? '').trim());
-        if (newSec != null && (oldSec == null || newSec < oldSec)) {
-          byDirection[direction] = m;
-        }
-      }
-
-      if (byDirection.isEmpty) {
-        return ['• ${leg.station}: 운행 정보 없음'];
-      }
-
-      final dirs = byDirection.keys.toList()..sort();
-      final lines = <String>[];
-      for (final dir in dirs) {
-        final pick = byDirection[dir]!;
-        lines.add('• ${leg.station} $dir: ${_etaText(pick)}');
-      }
-      return lines;
+      }).toList();
+    } on TimeoutException {
+      return [
+        SubwayDisplayRow.line(
+          station: leg.station,
+          trackShort: '',
+          terminal: '',
+          eta: '시간 초과',
+          trackKind: SubwayTrackKind.other,
+        ),
+      ];
     } catch (_) {
-      return ['• ${leg.station}: 조회 실패'];
+      return [
+        SubwayDisplayRow.line(
+          station: leg.station,
+          trackShort: '',
+          terminal: '',
+          eta: '조회 실패',
+          trackKind: SubwayTrackKind.other,
+        ),
+      ];
     }
   }
 
-  static String _etaText(Map<String, dynamic> row) {
-    final secondsRaw = (row['barvlDt'] as String? ?? '').trim();
-    final seconds = int.tryParse(secondsRaw);
-    if (seconds != null && seconds >= 0) {
-      final minutes = (seconds / 60).ceil();
-      return minutes <= 0 ? '곧 도착' : '$minutes분 후 도착';
+  /// 오늘 시각이 이미 지났으면 다음 날 같은 시각으로 간주(요일별 시간표 차이는 반영하지 않음)
+  static tz.TZDateTime _nextOccurrence(tz.TZDateTime t, tz.TZDateTime now) {
+    var x = t;
+    while (!x.isAfter(now)) {
+      x = x.add(const Duration(days: 1));
     }
-    final msg = (row['arvlMsg2'] as String? ?? '').trim();
-    return msg.isEmpty ? '정보 없음' : msg;
+    return x;
   }
 
-  static String _extractDirection(String trainLine, String updnLine) {
-    final reg = RegExp(r'([가-힣A-Za-z0-9]+행)');
-    final match = reg.firstMatch(trainLine);
-    if (match != null) return match.group(1) ?? '';
-    return updnLine;
-  }
+}
 
-  static String? _subwayIdFromLine(String lineName) {
-    if (lineName.isEmpty) return null;
-    if (lineName.contains('1호선')) return '1001';
-    if (lineName.contains('2호선')) return '1002';
-    if (lineName.contains('3호선')) return '1003';
-    if (lineName.contains('4호선')) return '1004';
-    if (lineName.contains('5호선')) return '1005';
-    if (lineName.contains('6호선')) return '1006';
-    if (lineName.contains('7호선')) return '1007';
-    if (lineName.contains('8호선')) return '1008';
-    if (lineName.contains('9호선')) return '1009';
-    if (lineName.contains('중앙선')) return '1061';
-    if (lineName.contains('경의중앙선')) return '1063';
-    if (lineName.contains('공항철도')) return '1065';
-    if (lineName.contains('신분당선')) return '1077';
-    if (lineName.contains('수인분당선')) return '1075';
-    if (lineName.contains('경춘선')) return '1067';
-    if (lineName.contains('경강선')) return '1081';
-    if (lineName.contains('서해선')) return '1093';
-    if (lineName.contains('우이신설선')) return '1092';
-    return null;
-  }
+class _ScheduledCandidate {
+  _ScheduledCandidate({
+    required this.time,
+    required this.updn,
+    required this.terminal,
+  });
+
+  final tz.TZDateTime time;
+  final String updn;
+  final String terminal;
 }

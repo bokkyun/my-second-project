@@ -174,7 +174,7 @@ class _SubwayCommuteSettingsPanelState extends State<SubwayCommuteSettingsPanel>
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          '출근/퇴근 역을 선택하면 각 역의 양방향 도착 정보를 표시합니다.',
+          '출근/퇴근 역·노선을 선택하면, 공공데이터 시간표 기준 다음 열차 안내를 표시합니다.',
           style: TextStyle(
             fontSize: 12,
             color: Theme.of(context).colorScheme.onSurfaceVariant,

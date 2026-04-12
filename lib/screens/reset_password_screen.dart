@@ -11,23 +11,21 @@ class ResetPasswordScreen extends StatefulWidget {
 }
 
 class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
-  final _usernameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
   bool _loading = false;
   String _error = '';
   bool _success = false;
 
-  bool _isValidUsername(String v) => RegExp(r'^[a-zA-Z0-9_-]{3,20}$').hasMatch(v);
-
   @override
   void dispose() {
-    _usernameCtrl.dispose();
+    _emailCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
-    final username = _usernameCtrl.text.trim();
-    if (!_isValidUsername(username)) {
-      setState(() => _error = '아이디는 3~20자의 영문, 숫자, _(밑줄), -(하이픈)만 사용 가능합니다.');
+    final email = _emailCtrl.text.trim();
+    if (!AuthService.isValidEmail(email)) {
+      setState(() => _error = '올바른 이메일 형식을 입력해주세요.');
       return;
     }
     setState(() {
@@ -36,7 +34,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       _loading = true;
     });
     try {
-      await AuthService.resetPasswordForEmail(username);
+      await AuthService.resetPasswordForEmail(email);
       if (mounted) setState(() => _success = true);
     } on AuthException catch (e) {
       if (mounted) {
@@ -96,7 +94,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        '가입 시 사용한 아이디를 입력하면 재설정 안내 메일을 보냅니다.',
+                        '가입한 이메일을 입력하면 재설정 안내 메일을 보냅니다.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey),
                         textAlign: TextAlign.center,
                       ),
@@ -129,9 +127,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                         const SizedBox(height: 16),
                       ],
                       TextField(
-                        controller: _usernameCtrl,
-                        decoration: const InputDecoration(labelText: '아이디'),
-                        maxLength: 20,
+                        controller: _emailCtrl,
+                        keyboardType: TextInputType.emailAddress,
+                        autofillHints: const [AutofillHints.email],
+                        decoration: const InputDecoration(labelText: '이메일'),
                         enabled: !_success,
                         onSubmitted: (_) => _submit(),
                       ),

@@ -16,6 +16,13 @@ class PushMessagingService {
   static Future<void> init(GoRouter router) async {
     if (_inited) return;
     _router = router;
+    // 웹은 Firebase 웹 옵션 파일(firebase_options.dart) 없으면 initializeApp() 경고가 반복됩니다.
+    // 현재 프로젝트는 웹 푸시를 사용하지 않으므로 조용히 스킵합니다.
+    if (kIsWeb) {
+      debugPrint('웹 환경: Firebase/FCM 초기화 생략');
+      _inited = true;
+      return;
+    }
 
     try {
       await Firebase.initializeApp()
