@@ -14,17 +14,20 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _usernameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   bool _showPassword = false;
   bool _loading = false;
+  bool _googleLoading = false;
+  bool _resendingVerification = false;
   String _error = '';
+  String _pendingVerificationEmail = '';
   Timer? _loadingWatchdog;
 
   @override
   void dispose() {
     _loadingWatchdog?.cancel();
-    _usernameCtrl.dispose();
+    _emailCtrl.dispose();
     _passwordCtrl.dispose();
     super.dispose();
   }
@@ -36,10 +39,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _submit() async {
     if (_loading) return;
-    final username = _usernameCtrl.text.trim();
+    final email = _emailCtrl.text.trim();
     final password = _passwordCtrl.text;
-    if (username.isEmpty || password.isEmpty) {
-      setState(() => _error = '아이디와 비밀번호를 입력해주세요.');
+    if (email.isEmpty || password.isEmpty) {
+      setState(() => _error = '이메일과 비밀번호를 입력해주세요.');
+      return;
+    }
+    if (!AuthService.isValidEmail(email)) {
+      setState(() => _error = '올바른 이메일 형식을 입력해주세요.');
       return;
     }
     _clearLoadingWatchdog();
@@ -54,10 +61,11 @@ class _LoginScreenState extends State<LoginScreen> {
     });
     setState(() {
       _error = '';
+      _pendingVerificationEmail = '';
       _loading = true;
     });
     try {
-      final res = await AuthService.signIn(username, password).timeout(
+      final res = await AuthService.signIn(email, password).timeout(
         const Duration(seconds: 22),
         onTimeout: () => throw TimeoutException('signIn'),
       );
@@ -77,10 +85,14 @@ class _LoginScreenState extends State<LoginScreen> {
         final msg = e.message.toLowerCase();
         setState(() => _error = msg.contains('email_not_confirmed') ||
                 msg.contains('email not confirmed')
-            ? '이메일 인증이 필요합니다. 관리자에게 문의하세요.'
+            ? '이메일 인증이 필요합니다. 메일함의 인증 링크를 눌러주세요.'
             : msg.contains('invalid login') || msg.contains('invalid credentials')
-                ? '아이디 또는 비밀번호가 올바르지 않습니다.'
+                ? '이메일 또는 비밀번호가 올바르지 않습니다.'
                 : '로그인 오류: ${e.message}');
+        if (msg.contains('email_not_confirmed') ||
+            msg.contains('email not confirmed')) {
+          _pendingVerificationEmail = email;
+        }
       }
     } catch (e) {
       final networkMsg = friendlyNetworkMessage(e.toString());
@@ -88,6 +100,46 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       _clearLoadingWatchdog();
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    if (_googleLoading) return;
+    setState(() {
+      _error = '';
+      _googleLoading = true;
+    });
+    try {
+      await AuthService.signInWithGoogle();
+      if (!mounted) return;
+      context.go('/calendar');
+    } on Exception catch (e) {
+      final msg = e.toString();
+      if (msg.contains('취소')) return;
+      setState(() => _error = 'Google 로그인 실패: $msg');
+    } finally {
+      if (mounted) setState(() => _googleLoading = false);
+    }
+  }
+
+  Future<void> _resendVerification() async {
+    final email = _pendingVerificationEmail.trim();
+    if (email.isEmpty || _resendingVerification) return;
+    setState(() => _resendingVerification = true);
+    try {
+      await AuthService.resendSignupEmail(email);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('인증 메일을 다시 보냈습니다. 메일함을 확인해주세요.')),
+      );
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '인증 메일 재전송 실패: ${e.message}');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '인증 메일 재전송 오류: $e');
+    } finally {
+      if (mounted) setState(() => _resendingVerification = false);
     }
   }
 
@@ -140,12 +192,29 @@ class _LoginScreenState extends State<LoginScreen> {
                           ]),
                         ),
                         const SizedBox(height: 16),
+                        if (_pendingVerificationEmail.isNotEmpty) ...[
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _resendingVerification
+                                  ? null
+                                  : _resendVerification,
+                              child: Text(
+                                _resendingVerification
+                                    ? '재전송 중...'
+                                    : '인증 메일 다시 보내기',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
                       ],
 
                       TextField(
-                        controller: _usernameCtrl,
-                        decoration: const InputDecoration(labelText: '아이디'),
-                        maxLength: 20,
+                        controller: _emailCtrl,
+                        keyboardType: TextInputType.emailAddress,
+                        autofillHints: const [AutofillHints.email],
+                        decoration: const InputDecoration(labelText: '이메일'),
                         onSubmitted: (_) => _submit(),
                       ),
                       const SizedBox(height: 12),
@@ -198,6 +267,28 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 8),
                       const Divider(),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: OutlinedButton.icon(
+                          onPressed: _googleLoading ? null : _signInWithGoogle,
+                          icon: _googleLoading
+                              ? const SizedBox(
+                                  width: 20, height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : Image.network(
+                                  'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
+                                  width: 20, height: 20,
+                                ),
+                          label: const Text('Google로 로그인', style: TextStyle(fontSize: 15)),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Color(0xFFDADCE0)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                      ),
                       const SizedBox(height: 12),
                       Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                         const Text('계정이 없으신가요? '),

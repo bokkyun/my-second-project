@@ -1,11 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
-/// 아이디 → Supabase 이메일 변환 (웹과 동일한 방식)
-String toEmail(String username) =>
-    '${username.trim().toLowerCase()}@teamsync.local';
 
 bool _isRetryableNetworkError(Object e) {
   if (e is TimeoutException) return true;
@@ -32,6 +29,16 @@ class AuthService {
 
   static User? get currentUser => _client.auth.currentUser;
 
+  static bool isValidEmail(String v) {
+    final email = v.trim();
+    return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
+  }
+
+  static String? get _emailSignupRedirectTo {
+    if (kIsWeb) return '${Uri.base.origin}/login';
+    return null;
+  }
+
   /// 비밀번호 재설정 메일의 리다이렉트 URL (웹: 현재 오리진 /update-password)
   static String? get _passwordResetRedirectTo {
     if (kIsWeb) return '${Uri.base.origin}/update-password';
@@ -40,12 +47,12 @@ class AuthService {
   }
 
   /// DNS 일시 실패 등에 대비해 짧게 재시도합니다.
-  static Future<AuthResponse> signIn(String username, String password) async {
+  static Future<AuthResponse> signIn(String email, String password) async {
     const maxAttempts = 3;
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         return await _client.auth.signInWithPassword(
-          email: toEmail(username),
+          email: email.trim(),
           password: password,
         );
       } catch (e) {
@@ -60,20 +67,53 @@ class AuthService {
   }
 
   static Future<AuthResponse> signUp(
-      String username, String password, String nickname) {
+      String email, String password, String nickname) {
     return _client.auth.signUp(
-      email: toEmail(username),
+      email: email.trim(),
       password: password,
-      data: {'nickname': nickname.isEmpty ? username : nickname},
+      emailRedirectTo: _emailSignupRedirectTo,
+      data: {'nickname': nickname},
+    );
+  }
+
+  /// Google 소셜 로그인
+  /// serverClientId: Google Cloud Console의 웹 OAuth 클라이언트 ID
+  static Future<AuthResponse> signInWithGoogle() async {
+    const webClientId = 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com'; // TODO: 실제 웹 클라이언트 ID로 교체
+
+    final googleSignIn = GoogleSignIn(serverClientId: webClientId);
+    final googleUser = await googleSignIn.signIn();
+
+    if (googleUser == null) throw Exception('Google 로그인이 취소되었습니다.');
+
+    final googleAuth = await googleUser.authentication;
+    final idToken = googleAuth.idToken;
+    final accessToken = googleAuth.accessToken;
+
+    if (idToken == null) throw Exception('Google ID 토큰을 가져오지 못했습니다.');
+
+    return _client.auth.signInWithIdToken(
+      provider: OAuthProvider.google,
+      idToken: idToken,
+      accessToken: accessToken,
     );
   }
 
   static Future<void> signOut() => _client.auth.signOut();
 
+  /// 회원가입 인증 메일 재전송
+  static Future<void> resendSignupEmail(String email) {
+    return _client.auth.resend(
+      type: OtpType.signup,
+      email: email.trim(),
+      emailRedirectTo: _emailSignupRedirectTo,
+    );
+  }
+
   /// 비밀번호 재설정 이메일 발송
-  static Future<void> resetPasswordForEmail(String username) {
+  static Future<void> resetPasswordForEmail(String email) {
     return _client.auth.resetPasswordForEmail(
-      toEmail(username),
+      email.trim(),
       redirectTo: _passwordResetRedirectTo,
     );
   }
@@ -81,5 +121,10 @@ class AuthService {
   /// 새 비밀번호로 변경 (재설정 링크 세션 또는 로그인 상태)
   static Future<UserResponse> updatePassword(String newPassword) {
     return _client.auth.updateUser(UserAttributes(password: newPassword));
+  }
+
+  /// 현재 로그인 사용자 탈퇴 (DB 정리 + auth 계정 삭제)
+  static Future<void> deleteMyAccount() async {
+    await _client.rpc('delete_my_account');
   }
 }
