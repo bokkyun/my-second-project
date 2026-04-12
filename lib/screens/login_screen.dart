@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -110,9 +111,11 @@ class _LoginScreenState extends State<LoginScreen> {
       _googleLoading = true;
     });
     try {
-      await AuthService.signInWithGoogle();
+      final res = await AuthService.signInWithGoogle();
       if (!mounted) return;
-      context.go('/calendar');
+      // 웹 OAuth는 같은 탭으로 이동했다가 돌아오며 세션이 복구됩니다. 여기서 이동하면 안 됩니다.
+      if (kIsWeb) return;
+      if (res?.session != null) context.go('/calendar');
     } on Exception catch (e) {
       final msg = e.toString();
       if (msg.contains('취소')) return;
@@ -120,6 +123,29 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => _googleLoading = false);
     }
+  }
+
+  /// Google 버튼 아이콘 — [Image.network]로 SVG/파비콘을 불러오면 웹에서 디코딩 오류가 날 수 있어 로컬만 사용합니다.
+  Widget _googleButtonIcon() {
+    return Container(
+      width: 20,
+      height: 20,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: const Color(0xFFE0E0E0)),
+      ),
+      child: const Text(
+        'G',
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF4285F4),
+          height: 1,
+        ),
+      ),
+    );
   }
 
   Future<void> _resendVerification() async {
@@ -271,21 +297,27 @@ class _LoginScreenState extends State<LoginScreen> {
                       SizedBox(
                         width: double.infinity,
                         height: 48,
-                        child: OutlinedButton.icon(
+                        child: OutlinedButton(
                           onPressed: _googleLoading ? null : _signInWithGoogle,
-                          icon: _googleLoading
-                              ? const SizedBox(
-                                  width: 20, height: 20,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : Image.network(
-                                  'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
-                                  width: 20, height: 20,
-                                ),
-                          label: const Text('Google로 로그인', style: TextStyle(fontSize: 15)),
                           style: OutlinedButton.styleFrom(
                             side: const BorderSide(color: Color(0xFFDADCE0)),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (_googleLoading)
+                                const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              else
+                                _googleButtonIcon(),
+                              const SizedBox(width: 10),
+                              const Text('Google로 로그인', style: TextStyle(fontSize: 15)),
+                            ],
                           ),
                         ),
                       ),

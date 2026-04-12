@@ -27,6 +27,19 @@ bool _isRetryableNetworkError(Object e) {
 class AuthService {
   static final _client = Supabase.instance.client;
 
+  /// [Supabase 대시보드 → Authentication → Providers](https://supabase.com/dashboard/project/qrucuqdehrdqgsunfwfd/auth/providers)
+  /// 에서 Email·Google을 활성화하고, Google의 Client ID/Secret을 넣습니다.
+  ///
+  /// **400 `redirect_uri_mismatch` 해결:** Google OAuth 요청의 `redirect_uri`는 항상 아래 **한 줄**입니다.
+  /// [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → **웹 애플리케이션** OAuth 클라이언트
+  /// (Supabase에 넣은 Client ID와 **동일한** 항목) → **승인된 리디렉션 URI**에 아래를 **그대로** 추가합니다.
+  ///
+  /// `https://qrucuqdehrdqgsunfwfd.supabase.co/auth/v1/callback`
+  ///
+  /// **승인된 JavaScript 원본**에는 `http://localhost:포트`, `http://127.0.0.1:포트`(Flutter가 쓰는 포트),
+  /// 배포 시 `https://배포도메인` 을 넣습니다. (끝 슬래시 없이 origin만)
+  /// Supabase에 다른 프로젝트 URL을 쓰면 위 호스트도 그 프로젝트 ref에 맞게 바꿉니다.
+
   /// Google Cloud Console → **웹 애플리케이션** OAuth 클라이언트 ID (`web/index.html` meta와 동일).
   static const _googleWebClientId =
       '71423794065-a0csmmroi6e370f2hj0n3cghjt6t7qdh.apps.googleusercontent.com';
@@ -38,14 +51,15 @@ class AuthService {
     return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
   }
 
+  /// 웹(해시 라우터 `#/…`)에서 인증 메일 링크가 올바른 화면으로 오도록 `#/` 경로를 씁니다.
   static String? get _emailSignupRedirectTo {
-    if (kIsWeb) return '${Uri.base.origin}/login';
+    if (kIsWeb) return '${Uri.base.origin}/#/login';
     return null;
   }
 
-  /// 비밀번호 재설정 메일의 리다이렉트 URL (웹: 현재 오리진 /update-password)
+  /// 비밀번호 재설정 메일의 리다이렉트 URL (웹: 해시 라우트)
   static String? get _passwordResetRedirectTo {
-    if (kIsWeb) return '${Uri.base.origin}/update-password';
+    if (kIsWeb) return '${Uri.base.origin}/#/update-password';
     // 네이티브에서 이메일 링크로 앱을 열려면 Supabase에 동일 URL 등록 후 딥링크 설정이 필요합니다.
     return null;
   }
@@ -81,10 +95,27 @@ class AuthService {
   }
 
   /// Google 소셜 로그인
-  /// 웹: [GoogleSignIn]에 `clientId`가 필요합니다. `web/index.html`의 meta와 동일한 ID를 쓰세요.
-  static Future<AuthResponse> signInWithGoogle() async {
+  ///
+  /// **웹:** [signInWithOAuth]로 진행합니다. Google에 넘기는 `redirect_uri`가 Supabase
+  /// 콜백(`…/auth/v1/callback`)과 일치해 `redirect_uri_mismatch`를 피합니다.
+  /// (GIS/`google_sign_in`만 쓰면 앱 출처 등 다른 redirect가 나와 콘솔과 안 맞을 수 있음.)
+  /// Supabase 대시보드 → Redirect URLs에 `${Uri.base.origin}/**` 형태로 허용이 필요합니다.
+  ///
+  /// **Android·iOS:** [GoogleSignIn] + [signInWithIdToken].
+  static Future<AuthResponse?> signInWithGoogle() async {
+    if (kIsWeb) {
+      final ok = await _client.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: '${Uri.base.origin}/',
+        authScreenLaunchMode: LaunchMode.platformDefault,
+      );
+      if (!ok) {
+        throw Exception('브라우저에서 Google 로그인을 시작할 수 없습니다.');
+      }
+      return null;
+    }
+
     final googleSignIn = GoogleSignIn(
-      clientId: kIsWeb ? _googleWebClientId : null,
       serverClientId: _googleWebClientId,
     );
     final googleUser = await googleSignIn.signIn();

@@ -1,15 +1,24 @@
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'bootstrap/url_strategy_stub.dart'
+    if (dart.library.html) 'bootstrap/url_strategy_web.dart' as url_strategy;
 import 'router.dart' show appRouter, setupAppRouter;
 import 'services/notification_service.dart';
 import 'services/push_messaging_service.dart';
 import 'services/widget_sync_service.dart';
 
+/// Supabase 프로젝트 참조 (대시보드 URL에 사용)
+/// [Authentication → Providers](https://supabase.com/dashboard/project/qrucuqdehrdqgsunfwfd/auth/providers)
+/// 에서 Email / Google 등 공급자를 켜고 Client ID·Secret을 넣습니다.
+const String kSupabaseProjectRef = 'qrucuqdehrdqgsunfwfd';
+
 /// 빌드 시 `--dart-define=SUPABASE_URL=...` / `SUPABASE_ANON_KEY=...` 로 덮어쓸 수 있습니다.
 const String _kSupabaseUrl = String.fromEnvironment(
   'SUPABASE_URL',
-  defaultValue: 'https://qrucuqdehrdqgsunfwfd.supabase.co',
+  defaultValue: 'https://$kSupabaseProjectRef.supabase.co',
 );
 const String _kSupabaseAnonKey = String.fromEnvironment(
   'SUPABASE_ANON_KEY',
@@ -23,6 +32,7 @@ const double _kExperimentalBottomLiftForSystemNav = 48;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  url_strategy.configureAppUrlStrategy();
   await initializeDateFormatting('ko_KR');
   try {
     await NotificationService.initialize();
@@ -30,13 +40,32 @@ void main() async {
     debugPrint('NotificationService 초기화 오류(무시): $e');
   }
   // 커스텀 HttpClient(IOClient)는 일부 기기에서 DNS/연결과 맞지 않을 수 있어 SDK 기본 클라이언트 사용
+  var supabaseInitialized = false;
   try {
     await Supabase.initialize(
       url: _kSupabaseUrl,
       anonKey: _kSupabaseAnonKey,
+      authOptions: const FlutterAuthClientOptions(
+        // OAuth(Google 등) 복귀 URL의 세션(code/fragment)을 웹에서 인식
+        detectSessionInUri: true,
+        autoRefreshToken: true,
+      ),
     ).timeout(const Duration(seconds: 10));
+    supabaseInitialized = true;
   } catch (e) {
     debugPrint('Supabase 초기화 타임아웃 또는 오류 - 오프라인 모드로 진행: $e');
+  }
+  // Google OAuth(PKCE) 복귀 시 `?code=`가 있어도 세션이 비어 있으면 한 번 더 복구 (해시 URL 환경 대비)
+  if (kIsWeb && supabaseInitialized) {
+    try {
+      final u = Uri.base;
+      if (u.queryParameters.containsKey('code') &&
+          Supabase.instance.client.auth.currentSession == null) {
+        await Supabase.instance.client.auth.getSessionFromUrl(u);
+      }
+    } catch (e) {
+      debugPrint('OAuth 세션 복구 재시도: $e');
+    }
   }
   setupAppRouter();
   NotificationService.attachRouter(appRouter);
