@@ -127,8 +127,61 @@ class EventDetailSheet extends StatelessWidget {
     );
   }
 
-  /// 읽기 전용(한국부동산원·공공 API 등)
+  Widget _buildDartIpoFields(Map<String, dynamic> raw) {
+    const keys = <String, String>{
+      'corp_name': '기업명',
+      'flr_nm': '제출인',
+      'report_nm': '보고서명',
+      'rcept_dt': '접수일(공시제출일)',
+      'rcept_no': '접수번호',
+      'stock_code': '종목코드',
+      'corp_cls': '시장 구분',
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '공시 정보',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: Colors.green.shade800,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final e in keys.entries) ...[
+                if (raw[e.key] != null && raw[e.key].toString().trim().isNotEmpty) ...[
+                  Text(e.value, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.grey.shade700)),
+                  const SizedBox(height: 2),
+                  SelectableText(
+                    raw[e.key].toString(),
+                    style: const TextStyle(fontSize: 14, height: 1.35),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 읽기 전용(한국부동산원·Open DART·공공 API 등)
   Widget _buildExternalBody(BuildContext context) {
+    final isIpo = event.externalSource == 'ipo';
     return SafeArea(
       top: false,
       child: Container(
@@ -164,7 +217,10 @@ class EventDetailSheet extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Chip(
-                    label: const Text('아파트 청약·분양(공공데이터)', style: TextStyle(fontSize: 12)),
+                    label: Text(
+                      isIpo ? 'Open DART(금감원 공시)' : '아파트 청약·분양(공공데이터)',
+                      style: const TextStyle(fontSize: 12),
+                    ),
                     backgroundColor: event.flutterColor.withOpacity(0.2),
                     side: BorderSide(color: event.flutterColor.withOpacity(0.5)),
                     padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -203,7 +259,7 @@ class EventDetailSheet extends StatelessWidget {
                   ],
                   if (event.externalRaw != null) ...[
                     const SizedBox(height: 12),
-                    _buildRebAptLabeledBlock(context, event.externalRaw!),
+                    if (isIpo) _buildDartIpoFields(event.externalRaw!) else _buildRebAptLabeledBlock(context, event.externalRaw!),
                   ],
                 ],
               ),

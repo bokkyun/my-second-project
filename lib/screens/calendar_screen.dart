@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../models/event.dart';
 import '../utils/reb_apt_sply_api.dart';
+import '../utils/dart_ipo_api.dart';
 import '../models/subway_display_row.dart';
 import '../models/group.dart';
 import '../services/auth_service.dart';
@@ -65,6 +66,13 @@ class _CalendarScreenState extends State<CalendarScreen>
   List<CalendarEvent> _rebAptEvents = [];
   bool _rebAptLoading = false;
   String? _rebAptError;
+
+  /// Open DART 공모(지분·C001) 공시 제출일
+  bool _showDartIpo = false;
+  List<CalendarEvent> _dartIpoEvents = [];
+  bool _dartIpoLoading = false;
+  String? _dartIpoError;
+  int _dartIpoCacheYm = 0; // YYYY*100+MM — 같은 달이면 재요청 생략
   String? _appVersionLabel;
 
   @override
@@ -75,6 +83,7 @@ class _CalendarScreenState extends State<CalendarScreen>
     _pendingEventId = widget.initialOpenEventId;
     _loadAll();
     unawaited(_loadRebAptPref());
+    unawaited(_loadDartIpoPref());
     unawaited(_loadAppVersion());
     _loadProfile();
     _refreshSubwaySummary();
@@ -261,7 +270,8 @@ class _CalendarScreenState extends State<CalendarScreen>
       }
       if (ev == null &&
           !eventId.startsWith('reb-apt-') &&
-          !eventId.startsWith('reb-od-')) {
+          !eventId.startsWith('reb-od-') &&
+          !eventId.startsWith('dart-ipo-')) {
         ev = await EventService.fetchEventById(eventId);
       }
       if (!mounted) return;
@@ -371,10 +381,67 @@ class _CalendarScreenState extends State<CalendarScreen>
     await _fetchRebAptEvents();
   }
 
-  /// Supabase + (옵션) 청약홈 외부 일정
+  Future<void> _loadDartIpoPref() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final on = p.getBool('calendar_show_dart_ipo') ?? false;
+      if (mounted) setState(() => _showDartIpo = on);
+      if (on) await _fetchDartIpoForFocusedMonth();
+    } catch (e) {
+      debugPrint('[CalendarScreen] _loadDartIpoPref: $e');
+    }
+  }
+
+  (DateTime, DateTime) _monthRangeFor(DateTime d) {
+    final start = DateTime(d.year, d.month, 1);
+    final end = DateTime(d.year, d.month + 1, 0, 23, 59, 59, 999);
+    return (start, end);
+  }
+
+  Future<void> _fetchDartIpoForFocusedMonth() async {
+    if (!_showDartIpo) {
+      if (mounted) {
+        setState(() {
+          _dartIpoEvents = [];
+          _dartIpoError = null;
+          _dartIpoLoading = false;
+        });
+      }
+      return;
+    }
+    final (start, end) = _monthRangeFor(_focusedDay);
+    final ym = _focusedDay.year * 100 + _focusedDay.month;
+    if (mounted) {
+      setState(() {
+        _dartIpoLoading = true;
+        _dartIpoError = null;
+      });
+    }
+    final r = await fetchDartIpoList(start, end);
+    if (!mounted) return;
+    setState(() {
+      _dartIpoLoading = false;
+      _dartIpoEvents = r.events;
+      _dartIpoError = r.error;
+      _dartIpoCacheYm = ym;
+    });
+  }
+
+  Future<void> _setShowDartIpo(bool value) async {
+    setState(() => _showDartIpo = value);
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setBool('calendar_show_dart_ipo', value);
+    } catch (_) {}
+    await _fetchDartIpoForFocusedMonth();
+  }
+
+  /// Supabase + (옵션) 청약홈·DART 외부 일정
   List<CalendarEvent> get _allVisibleEvents {
-    if (!_showRebAptSply) return _events;
-    return [..._events, ..._rebAptEvents];
+    var out = List<CalendarEvent>.from(_events);
+    if (_showRebAptSply) out = [...out, ..._rebAptEvents];
+    if (_showDartIpo) out = [...out, ..._dartIpoEvents];
+    return out;
   }
 
   Future<void> _refreshSubwaySummary() async {
@@ -772,7 +839,13 @@ class _CalendarScreenState extends State<CalendarScreen>
           onDaySelected: (selected, focused) {
             setState(() { _selectedDay = selected; _focusedDay = focused; });
           },
-          onPageChanged: (focused) => setState(() => _focusedDay = focused),
+            onPageChanged: (focused) {
+              setState(() => _focusedDay = focused);
+              final ym = focused.year * 100 + focused.month;
+              if (_showDartIpo && ym != _dartIpoCacheYm) {
+                unawaited(_fetchDartIpoForFocusedMonth());
+              }
+            },
         ),
 
         const Divider(height: 1),
@@ -785,6 +858,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                   onRefresh: () async {
                     await _loadEvents();
                     if (_showRebAptSply) await _fetchRebAptEvents();
+                    if (_showDartIpo) await _fetchDartIpoForFocusedMonth();
                   },
                   child: selectedEvents.isEmpty
                       ? ListView(
@@ -1054,11 +1128,30 @@ class _CalendarScreenState extends State<CalendarScreen>
             contentPadding: const EdgeInsets.symmetric(horizontal: 8),
           ),
           CheckboxListTile(
-            title: const Text('공모주 (준비 중)', style: TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: const Text('추가 예정', style: TextStyle(fontSize: 12)),
-            value: false,
-            onChanged: null,
-            secondary: const Icon(Icons.show_chart, color: Colors.grey),
+            title: const Text('공모주(공시 제출)', style: TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: Text(
+              _dartIpoLoading
+                  ? '불러오는 중…'
+                  : (_dartIpoError ?? 'Open DART(C·C001) — 키는 --dart-define=DART_CRTFC_KEY'),
+              style: TextStyle(
+                fontSize: 12,
+                color: _dartIpoError != null && _showDartIpo ? Theme.of(context).colorScheme.error : null,
+              ),
+            ),
+            value: _showDartIpo,
+            onChanged: (v) {
+              unawaited(_setShowDartIpo(v ?? false));
+            },
+            secondary: _dartIpoLoading
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: Padding(
+                      padding: EdgeInsets.all(4),
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : const Icon(Icons.show_chart, color: Colors.green),
             contentPadding: const EdgeInsets.symmetric(horizontal: 8),
           ),
           const Divider(height: 1),
