@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -64,6 +65,7 @@ class _CalendarScreenState extends State<CalendarScreen>
   List<CalendarEvent> _rebAptEvents = [];
   bool _rebAptLoading = false;
   String? _rebAptError;
+  String? _appVersionLabel;
 
   @override
   void initState() {
@@ -73,6 +75,7 @@ class _CalendarScreenState extends State<CalendarScreen>
     _pendingEventId = widget.initialOpenEventId;
     _loadAll();
     unawaited(_loadRebAptPref());
+    unawaited(_loadAppVersion());
     _loadProfile();
     _refreshSubwaySummary();
     _subscribeCalendarRealtime();
@@ -316,6 +319,20 @@ class _CalendarScreenState extends State<CalendarScreen>
       if (on) await _fetchRebAptEvents();
     } catch (e) {
       debugPrint('[CalendarScreen] _loadRebAptPref: $e');
+    }
+  }
+
+  /// pubspec `version`이 앱 설정(Android versionName / versionCode 등)에 반영된 값
+  Future<void> _loadAppVersion() async {
+    try {
+      final p = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() {
+          _appVersionLabel = 'v${p.version} (빌드 ${p.buildNumber})';
+        });
+      }
+    } catch (e) {
+      debugPrint('[CalendarScreen] _loadAppVersion: $e');
     }
   }
 
@@ -1060,6 +1077,17 @@ class _CalendarScreenState extends State<CalendarScreen>
             title: const Text('프로필 설정'),
             onTap: () { Navigator.pop(context); context.push('/profile'); },
           ),
+          if (_appVersionLabel != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 16, 12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _appVersionLabel!,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              ),
+            ),
         ]),
       ),
     );
