@@ -256,7 +256,9 @@ class _CalendarScreenState extends State<CalendarScreen>
           break;
         }
       }
-      if (ev == null && !eventId.startsWith('reb-apt-')) {
+      if (ev == null &&
+          !eventId.startsWith('reb-apt-') &&
+          !eventId.startsWith('reb-od-')) {
         ev = await EventService.fetchEventById(eventId);
       }
       if (!mounted) return;

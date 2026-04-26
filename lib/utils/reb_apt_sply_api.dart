@@ -1,13 +1,11 @@
-// 한국부동산원 청약홈 분양정보(공공데이터) — data.go.kr
+// 한국부동산원 청약홈 분양정보(공공데이터)
+// - datago: apis.data.go.kr
+// - odcloud: api.odcloud.kr (v1/uddi:…, data 배열, serviceKey 쿼리) — 기본
 //
-// 키·경로는 빌드 시 --dart-define 으로 넣습니다(웹 my-first의 VITE_* 와 대응).
-//   --dart-define=DATA_GO_KR_SERVICE_KEY=인증키
-//   --dart-define=REB_APT_SPLY_PATH=/1613000/AptBasisOflsInfoService/getAptBasisOflsList
-//   --dart-define=REB_APT_PAGE_SIZE=200
-//   --dart-define=REB_APT_DATA_GO_ORIGIN=https://apis.data.go.kr
-// Flutter Web에서 CORS로 막히면, 동일출처 API 프록시 origin 을 REB_APT_DATA_GO_ORIGIN에 두세요.
-//
-// @see https://www.data.go.kr
+// --dart-define=REB_APT_API_MODE=odcloud 또는 datago
+// --dart-define=DATA_GO_KR_SERVICE_KEY=인증키
+// --dart-define=REB_APT_ODCLOUD_PATH=/api/15101046/v1/uddi:...
+// --dart-define=REB_APT_ODCLOUD_ORIGIN=https://api.odcloud.kr
 
 import 'dart:convert';
 
@@ -39,6 +37,7 @@ class RebAptSplyConfig {
   RebAptSplyConfig._();
 
   static const String dataGoServiceKey = String.fromEnvironment('DATA_GO_KR_SERVICE_KEY');
+  static const String apiMode = String.fromEnvironment('REB_APT_API_MODE', defaultValue: 'odcloud');
   static const String splyPath = String.fromEnvironment(
     'REB_APT_SPLY_PATH',
     defaultValue: '/1613000/AptBasisOflsInfoService/getAptBasisOflsList',
@@ -48,17 +47,14 @@ class RebAptSplyConfig {
     'REB_APT_DATA_GO_ORIGIN',
     defaultValue: 'https://apis.data.go.kr',
   );
-}
-
-RebAptSplyUrlParts buildRebAptSplyListUrl() {
-  final key = RebAptSplyConfig.dataGoServiceKey.trim();
-  final serviceKey = key.isNotEmpty ? 'serviceKey=${Uri.encodeQueryComponent(key)}' : '';
-  const pageNo = 'pageNo=1';
-  final num = 'numOfRows=${RebAptSplyConfig.pageSize}';
-  const type = 'resultType=json';
-  final path = RebAptSplyConfig.splyPath.replaceFirst(RegExp(r'^\s+'), '');
-  final q = [serviceKey, pageNo, num, type].where((e) => e.isNotEmpty).join('&');
-  return RebAptSplyUrlParts(path: path, query: q, keyPresent: key.isNotEmpty);
+  static const String odcloudPath = String.fromEnvironment(
+    'REB_APT_ODCLOUD_PATH',
+    defaultValue: '/api/15101046/v1/uddi:14a46595-03dd-47d3-a418-d64e52820598',
+  );
+  static const String odcloudOrigin = String.fromEnvironment(
+    'REB_APT_ODCLOUD_ORIGIN',
+    defaultValue: 'https://api.odcloud.kr',
+  );
 }
 
 class RebAptSplyUrlParts {
@@ -66,26 +62,78 @@ class RebAptSplyUrlParts {
     required this.path,
     required this.query,
     required this.keyPresent,
+    required this.mode,
   });
   final String path;
   final String query;
   final bool keyPresent;
+  final String mode;
 }
 
-String toDataGoAbsoluteUrl(String path, [String? query]) {
+RebAptSplyUrlParts buildRebAptSplyListUrl() {
+  final m = RebAptSplyConfig.apiMode.toLowerCase();
+  if (m == 'datago') {
+    final key = RebAptSplyConfig.dataGoServiceKey.trim();
+    final serviceKey = key.isNotEmpty ? 'serviceKey=${Uri.encodeQueryComponent(key)}' : '';
+    const pageNo = 'pageNo=1';
+    final num = 'numOfRows=${RebAptSplyConfig.pageSize}';
+    const type = 'resultType=json';
+    final path = RebAptSplyConfig.splyPath.replaceFirst(RegExp(r'^\s+'), '');
+    final q = [serviceKey, pageNo, num, type].where((e) => e.isNotEmpty).join('&');
+    return RebAptSplyUrlParts(path: path, query: q, keyPresent: key.isNotEmpty, mode: 'datago');
+  }
+
+  final key = RebAptSplyConfig.dataGoServiceKey.trim();
+  final serviceKey = key.isNotEmpty ? 'serviceKey=${Uri.encodeQueryComponent(key)}' : '';
+  const page = 'page=1';
+  final perPage = 'perPage=${RebAptSplyConfig.pageSize}';
+  const returnType = 'returnType=JSON';
+  final path = RebAptSplyConfig.odcloudPath.replaceFirst(RegExp(r'^\s+'), '');
+  final q = [page, perPage, serviceKey, returnType].where((e) => e.isNotEmpty).join('&');
+  return RebAptSplyUrlParts(path: path, query: q, keyPresent: key.isNotEmpty, mode: 'odcloud');
+}
+
+String toRebAptAbsoluteUrl(String path, String? query, String mode) {
   final p = path.startsWith('/') ? path : '/$path';
+  final q = (query == null || query.isEmpty) ? '' : (query.startsWith('?') ? query : '?$query');
+
+  if (mode == 'odcloud') {
+    var origin = RebAptSplyConfig.odcloudOrigin.replaceAll(RegExp(r'/$'), '');
+    if (origin.isEmpty) origin = 'https://api.odcloud.kr';
+    return '$origin$p$q';
+  }
+
   var origin = RebAptSplyConfig.dataGoOrigin.replaceAll(RegExp(r'/$'), '');
   if (origin.isEmpty) origin = 'https://apis.data.go.kr';
-  final q = (query == null || query.isEmpty) ? '' : (query.startsWith('?') ? query : '?$query');
   return '$origin$p$q';
 }
 
-/// data.go.kr 표준 response.header / body
+/// data.go + odcloud 공통
 ({List<Map<String, dynamic>> items, String? error}) parseRebAptSplyResponse(dynamic json) {
   if (json is! Map) {
     return (items: <Map<String, dynamic>>[], error: '빈 응답입니다.');
   }
-  final res = json['response'] as Map<String, dynamic>?;
+  final m = Map<String, dynamic>.from(json);
+  if (m['data'] is List) {
+    final code = m['code'];
+    if (code is num && code < 0) {
+      return (items: <Map<String, dynamic>>[], error: m['msg']?.toString() ?? 'API 오류');
+    }
+    final list = m['data'] as List;
+    return (
+      items: list.map((e) {
+        if (e is Map<String, dynamic>) return e;
+        if (e is Map) return Map<String, dynamic>.from(e);
+        return <String, dynamic>{};
+      }).toList(),
+      error: null,
+    );
+  }
+  if (m['code'] is num && (m['code'] as num) < 0) {
+    return (items: <Map<String, dynamic>>[], error: m['msg']?.toString() ?? 'API 오류');
+  }
+
+  final res = m['response'] as Map<String, dynamic>?;
   if (res == null) {
     return (items: <Map<String, dynamic>>[], error: '응답 형식이 예상과 다릅니다.');
   }
@@ -108,10 +156,7 @@ String toDataGoAbsoluteUrl(String path, [String? query]) {
     return (items: <Map<String, dynamic>>[], error: null);
   }
   if (items is List) {
-    return (
-      items: items.whereType<Map<String, dynamic>>().toList(),
-      error: null,
-    );
+    return (items: items.map((e) => Map<String, dynamic>.from(e as Map)).toList(), error: null);
   }
   if (items is Map<String, dynamic>) {
     final item = items['item'];
@@ -119,13 +164,105 @@ String toDataGoAbsoluteUrl(String path, [String? query]) {
       return (items: <Map<String, dynamic>>[], error: null);
     }
     if (item is List) {
-      return (items: item.whereType<Map<String, dynamic>>().toList(), error: null);
+      return (items: item.map((e) => Map<String, dynamic>.from(e as Map)).toList(), error: null);
     }
     if (item is Map<String, dynamic>) {
       return (items: <Map<String, dynamic>>[item], error: null);
     }
   }
   return (items: <Map<String, dynamic>>[], error: null);
+}
+
+String _t(Map<String, dynamic> item, String k) {
+  final v = item[k];
+  if (v == null || v == '') return '';
+  return v.toString().trim();
+}
+
+/// 오늘 YYYYMMDD (로컬) — RCEPT_ENDDE 와 문자열 비교
+String ymd8Today() {
+  final d = DateTime.now();
+  return '${d.year}${d.month.toString().padLeft(2, '0')}${d.day.toString().padLeft(2, '0')}';
+}
+
+String getOdcloudReceiptEndYmd8(Map<String, dynamic> item) {
+  final v = item['RCEPT_ENDDE'] ?? item['rceptEndde'] ?? item['접수마감일'] ?? item['접수종료일'];
+  if (v == null) return '';
+  final s = v.toString().replaceAll(RegExp(r'[^0-9]'), '');
+  return s.length >= 8 ? s.substring(0, 8) : '';
+}
+
+List<Map<String, dynamic>> filterOdcloudItemsUpcoming(List<Map<String, dynamic>> items) {
+  final today = ymd8Today();
+  return items.where((row) {
+    final end = getOdcloudReceiptEndYmd8(row);
+    if (end.isEmpty) return false;
+    return end.compareTo(today) >= 0;
+  }).toList();
+}
+
+CalendarEvent? mapOdcloudItemToCalendarEvent(Map<String, dynamic> item, int index) {
+  var tb = _t(item, '주택명');
+  if (tb.isEmpty) tb = _t(item, '아파트명');
+  if (tb.isEmpty) tb = _t(item, '사업명');
+  if (tb.isEmpty) tb = '아파트 분양';
+
+  final p1 = _t(item, '공고번호');
+  final p2 = _t(item, '주택관리번호');
+  final pbl =
+      p1.isNotEmpty || p2.isNotEmpty ? ' (${[p1, p2].where((e) => e.isNotEmpty).join(' / ')})' : '';
+
+  var startYmd = _t(item, 'RCEPT_BGNDE');
+  if (startYmd.isEmpty) startYmd = _t(item, 'rceptBgnde');
+  if (startYmd.isEmpty) startYmd = _t(item, '접수시작일');
+  if (startYmd.isEmpty) startYmd = _t(item, '청약접수시작일');
+  if (startYmd.isEmpty) startYmd = _t(item, '입주자모집공고일');
+  if (startYmd.isEmpty) startYmd = _t(item, '공고일');
+  if (startYmd.isEmpty) startYmd = _t(item, '모집공고일');
+  if (startYmd.isEmpty) startYmd = _t(item, '접수기간');
+
+  var endYmd = _t(item, 'RCEPT_ENDDE');
+  if (endYmd.isEmpty) endYmd = _t(item, 'rceptEndde');
+  if (endYmd.isEmpty) endYmd = _t(item, '접수마감일');
+  if (endYmd.isEmpty) endYmd = _t(item, '접수종료일');
+  if (endYmd.isEmpty) endYmd = _t(item, '청약접수마감일');
+  if (endYmd.isEmpty) endYmd = startYmd;
+
+  var starts = _parseYmdToIsoStart(startYmd);
+  if (starts == null) {
+    for (final v in item.values) {
+      if (v == null) continue;
+      final s = v.toString();
+      if (RegExp(r'(\d{4}[-/.\s]?\d{2}[-/.\s]?\d{2}|\d{8})').hasMatch(s)) {
+        starts = _parseYmdToIsoStart(s);
+        if (starts != null) break;
+      }
+    }
+  }
+  if (starts == null) {
+    final d = DateTime.now();
+    starts =
+        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}T00:00:00';
+  }
+  final ends = _parseYmdToIsoEndOfDay(endYmd) ?? _parseYmdToIsoEndOfDay(startYmd) ?? starts;
+
+  final idKey = '${_t(item, '주택관리번호')}_${_t(item, '공고번호')}_$index';
+  final id = 'reb-od-${idKey.replaceAll(RegExp(r'[^a-zA-Z0-9가-힣\\-_]'), '_')}';
+
+  return CalendarEvent(
+    id: id,
+    title: '🏢 $tb$pbl',
+    description: 'api.odcloud.kr(공공데이터)에서 제공됩니다. 수정/삭제할 수 없습니다.',
+    startsAt: DateTime.parse(starts).toLocal(),
+    endsAt: DateTime.parse(ends).toLocal(),
+    isAllDay: true,
+    color: '#0d47a1',
+    creatorId: CalendarEvent.kExternalCreatorId,
+    creatorNickname: '청약홈(ODcloud)',
+    groupIds: const [],
+    eventKind: 'default',
+    externalSource: 'reb-odcloud',
+  );
 }
 
 CalendarEvent? mapSplyItemToCalendarEvent(Map<String, dynamic> item, int index) {
@@ -151,11 +288,11 @@ CalendarEvent? mapSplyItemToCalendarEvent(Map<String, dynamic> item, int index) 
   if (starts == null) return null;
   final ends = _parseYmdToIsoEndOfDay(endYmd) ?? _parseYmdToIsoEndOfDay(startYmd) ?? starts;
   final idRaw = item['pblancNo'] ?? item['aptSeq'] ?? item['rceptMth'] ?? index;
-  final id = 'reb-apt-${idRaw.toString().replaceAll(RegExp(r'[^a-zA-Z0-9\-_]'), '_')}';
+  final id = 'reb-apt-${idRaw.toString().replaceAll(RegExp(r'[^a-zA-Z0-9\\-_]'), '_')}';
   return CalendarEvent(
     id: id,
     title: '🏢 ${titleBase.toString().trim()}$pbl',
-    description: '한국부동산원 청약홈 공공데이터(apis.data.go.kr)에서 제공됩니다. 수정/삭제할 수 없습니다.',
+    description: 'apis.data.go.kr(공공데이터)에서 제공됩니다. 수정/삭제할 수 없습니다.',
     startsAt: DateTime.parse(starts).toLocal(),
     endsAt: DateTime.parse(ends).toLocal(),
     isAllDay: true,
@@ -168,29 +305,47 @@ CalendarEvent? mapSplyItemToCalendarEvent(Map<String, dynamic> item, int index) 
   );
 }
 
-/// 네이티브·앱: 직접 data.go 호출. (웹은 CORS로 실패할 수 있음)
+CalendarEvent? mapRebAptItemToCalendarEvent(Map<String, dynamic> item, int index, String mode) {
+  if (mode == 'odcloud') {
+    return mapOdcloudItemToCalendarEvent(item, index);
+  }
+  return mapSplyItemToCalendarEvent(item, index);
+}
+
+/// 네이티브/웹: odcloud·data.go origin 직접 호출
 Future<({List<CalendarEvent> events, String? error})> fetchRebAptSplyList() async {
   final built = buildRebAptSplyListUrl();
   if (!built.keyPresent) {
-    return (events: <CalendarEvent>[], error: 'DATA_GO_KR_SERVICE_KEY가 없습니다. --dart-define으로 설정하세요.');
+    return (events: <CalendarEvent>[], error: 'DATA_GO_KR_SERVICE_KEY(인증키)를 --dart-define으로 설정하세요.');
   }
   if (built.path.isEmpty) {
-    return (events: <CalendarEvent>[], error: 'REB_APT_SPLY_PATH를 확인하세요.');
+    return (events: <CalendarEvent>[], error: 'API 경로를 확인하세요.(REB_APT_ODCLOUD_PATH / REB_APT_SPLY_PATH)');
   }
-  final url = toDataGoAbsoluteUrl(built.path, built.query);
+  final url = toRebAptAbsoluteUrl(built.path, built.query, built.mode);
   try {
     final res = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 30));
+    final bodyJson = res.body.isNotEmpty ? jsonDecode(utf8.decode(res.bodyBytes)) : <String, dynamic>{};
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      return (events: <CalendarEvent>[], error: 'HTTP ${res.statusCode}');
+      String? em;
+      if (bodyJson is Map) {
+        em = bodyJson['msg']?.toString() ?? bodyJson['message']?.toString();
+      }
+      return (events: <CalendarEvent>[], error: em ?? 'HTTP ${res.statusCode}');
     }
-    final json = jsonDecode(utf8.decode(res.bodyBytes));
-    final parsed = parseRebAptSplyResponse(json);
+    if (bodyJson is! Map) {
+      return (events: <CalendarEvent>[], error: 'JSON 형식이 아닙니다.');
+    }
+    final parsed = parseRebAptSplyResponse(bodyJson);
     if (parsed.error != null) {
       return (events: <CalendarEvent>[], error: parsed.error);
     }
+    var rows = parsed.items;
+    if (built.mode == 'odcloud') {
+      rows = filterOdcloudItemsUpcoming(rows);
+    }
     final out = <CalendarEvent>[];
-    for (var i = 0; i < parsed.items.length; i++) {
-      final ev = mapSplyItemToCalendarEvent(parsed.items[i], i);
+    for (var i = 0; i < rows.length; i++) {
+      final ev = mapRebAptItemToCalendarEvent(rows[i], i, built.mode);
       if (ev != null) out.add(ev);
     }
     return (events: out, error: null);
@@ -199,8 +354,7 @@ Future<({List<CalendarEvent> events, String? error})> fetchRebAptSplyList() asyn
     if (msg.contains('cors') || msg.contains('xmlhttp') || msg.contains('clientexception')) {
       return (
         events: <CalendarEvent>[],
-        error: 'CORS/네트워크: Flutter Web은 data.go.kr 직접 호출이 막힐 수 있습니다. '
-            'REB_APT_DATA_GO_ORIGIN에 동일출처 프록시를 쓰거나, Android/iOS 앱에서 사용하세요.',
+        error: 'CORS/네트워크: Web 빌드는 브라우저 정책에 막힐 수 있어 Android/iOS로 시험하거나 프록시를 쓰세요.',
       );
     }
     return (events: <CalendarEvent>[], error: e.toString());
