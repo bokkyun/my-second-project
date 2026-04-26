@@ -178,6 +178,14 @@ String _t(Map<String, dynamic> item, String k) {
   return v.toString().trim();
 }
 
+String _firstT(Map<String, dynamic> item, List<String> keys) {
+  for (final k in keys) {
+    final v = _t(item, k);
+    if (v.isNotEmpty) return v;
+  }
+  return '';
+}
+
 /// 오늘 YYYYMMDD (로컬) — RCEPT_ENDDE 와 문자열 비교
 String ymd8Today() {
   final d = DateTime.now();
@@ -185,7 +193,12 @@ String ymd8Today() {
 }
 
 String getOdcloudReceiptEndYmd8(Map<String, dynamic> item) {
-  final v = item['RCEPT_ENDDE'] ?? item['rceptEndde'] ?? item['접수마감일'] ?? item['접수종료일'];
+  final v = item['RCEPT_ENDDE'] ??
+      item['SPLY_RCEPT_ENDDE'] ??
+      item['SPLY_RCEPT_CLSDE'] ??
+      item['rceptEndde'] ??
+      item['접수마감일'] ??
+      item['접수종료일'];
   if (v == null) return '';
   final s = v.toString().replaceAll(RegExp(r'[^0-9]'), '');
   return s.length >= 8 ? s.substring(0, 8) : '';
@@ -201,30 +214,48 @@ List<Map<String, dynamic>> filterOdcloudItemsUpcoming(List<Map<String, dynamic>>
 }
 
 CalendarEvent? mapOdcloudItemToCalendarEvent(Map<String, dynamic> item, int index) {
-  var tb = _t(item, '주택명');
-  if (tb.isEmpty) tb = _t(item, '아파트명');
-  if (tb.isEmpty) tb = _t(item, '사업명');
+  var tb = _firstT(item, [
+    '주택명',
+    '아파트명',
+    'HOUSE_NM',
+    'HSMP_NM',
+    'PBLANC_NM',
+    'SPLY_HSMP_NM',
+    'HSSPLY_HSMP_NM',
+    '사업명',
+    'BIZ_NM',
+    'SPLY_BIZ_NM',
+    'BLDG_NM',
+  ]);
   if (tb.isEmpty) tb = '아파트 분양';
 
-  final p1 = _t(item, '공고번호');
-  final p2 = _t(item, '주택관리번호');
+  final p1 = _firstT(item, ['공고번호', 'PBLANC_NO']);
+  final p2 = _firstT(item, ['주택관리번호', 'HOUSE_MGMT_NO', 'HSMP_MGMT_NO']);
   final pbl =
       p1.isNotEmpty || p2.isNotEmpty ? ' (${[p1, p2].where((e) => e.isNotEmpty).join(' / ')})' : '';
 
-  var startYmd = _t(item, 'RCEPT_BGNDE');
-  if (startYmd.isEmpty) startYmd = _t(item, 'rceptBgnde');
-  if (startYmd.isEmpty) startYmd = _t(item, '접수시작일');
-  if (startYmd.isEmpty) startYmd = _t(item, '청약접수시작일');
-  if (startYmd.isEmpty) startYmd = _t(item, '입주자모집공고일');
-  if (startYmd.isEmpty) startYmd = _t(item, '공고일');
-  if (startYmd.isEmpty) startYmd = _t(item, '모집공고일');
-  if (startYmd.isEmpty) startYmd = _t(item, '접수기간');
+  var startYmd = _firstT(item, [
+    'RCEPT_BGNDE',
+    'SPLY_RCEPT_BGNDE',
+    'SPLY_RCEPT_STTDE',
+    'rceptBgnde',
+    '접수시작일',
+    '청약접수시작일',
+    '입주자모집공고일',
+    '공고일',
+    '모집공고일',
+    '접수기간',
+  ]);
 
-  var endYmd = _t(item, 'RCEPT_ENDDE');
-  if (endYmd.isEmpty) endYmd = _t(item, 'rceptEndde');
-  if (endYmd.isEmpty) endYmd = _t(item, '접수마감일');
-  if (endYmd.isEmpty) endYmd = _t(item, '접수종료일');
-  if (endYmd.isEmpty) endYmd = _t(item, '청약접수마감일');
+  var endYmd = _firstT(item, [
+    'RCEPT_ENDDE',
+    'SPLY_RCEPT_ENDDE',
+    'SPLY_RCEPT_CLSDE',
+    'rceptEndde',
+    '접수마감일',
+    '접수종료일',
+    '청약접수마감일',
+  ]);
   if (endYmd.isEmpty) endYmd = startYmd;
 
   var starts = _parseYmdToIsoStart(startYmd);
@@ -245,7 +276,8 @@ CalendarEvent? mapOdcloudItemToCalendarEvent(Map<String, dynamic> item, int inde
   }
   final ends = _parseYmdToIsoEndOfDay(endYmd) ?? _parseYmdToIsoEndOfDay(startYmd) ?? starts;
 
-  final idKey = '${_t(item, '주택관리번호')}_${_t(item, '공고번호')}_$index';
+  final idKey =
+      '${_firstT(item, ['주택관리번호', 'HOUSE_MGMT_NO', 'HSMP_MGMT_NO'])}_${_firstT(item, ['공고번호', 'PBLANC_NO'])}_$index';
   final id = 'reb-od-${idKey.replaceAll(RegExp(r'[^a-zA-Z0-9가-힣\\-_]'), '_')}';
 
   return CalendarEvent(
@@ -261,6 +293,7 @@ CalendarEvent? mapOdcloudItemToCalendarEvent(Map<String, dynamic> item, int inde
     groupIds: const [],
     eventKind: 'default',
     externalSource: 'reb-odcloud',
+    externalRaw: Map<String, dynamic>.from(item),
   );
 }
 
@@ -301,6 +334,7 @@ CalendarEvent? mapSplyItemToCalendarEvent(Map<String, dynamic> item, int index) 
     groupIds: const [],
     eventKind: 'default',
     externalSource: 'reb-apt',
+    externalRaw: Map<String, dynamic>.from(item),
   );
 }
 

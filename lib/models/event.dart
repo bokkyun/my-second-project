@@ -21,6 +21,9 @@ class CalendarEvent {
   /// null이면 Supabase. `reb-apt` 등은 캘린더에만 합쳐 표시(수정·삭제 불가).
   final String? externalSource;
 
+  /// 공공 API 원본(청약 `reb-odcloud` 상세·한글 라벨 표시용, 선택)
+  final Map<String, dynamic>? externalRaw;
+
   const CalendarEvent({
     required this.id,
     required this.title,
@@ -34,6 +37,7 @@ class CalendarEvent {
     required this.groupIds,
     this.eventKind = 'schedule',
     this.externalSource,
+    this.externalRaw,
   });
 
   bool get isExternal => externalSource != null;
@@ -55,6 +59,7 @@ class CalendarEvent {
       groupIds: visibility.map((v) => v['group_id'] as String).toList(),
       eventKind: map['event_kind'] as String? ?? 'schedule',
       externalSource: null,
+      externalRaw: null,
     );
   }
 

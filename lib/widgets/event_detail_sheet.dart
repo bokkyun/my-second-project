@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/event.dart';
 import '../models/group.dart';
+import '../utils/reb_apt_field_labels.dart';
 
 class EventDetailSheet extends StatelessWidget {
   final CalendarEvent event;
@@ -22,6 +23,109 @@ class EventDetailSheet extends StatelessWidget {
   String _fmt(DateTime dt, bool isAllDay) => isAllDay
       ? DateFormat('yyyy.MM.dd (E)', 'ko').format(dt)
       : DateFormat('yyyy.MM.dd (E) HH:mm', 'ko').format(dt);
+
+  Widget _buildRebAptLabeledBlock(BuildContext context, Map<String, dynamic> raw) {
+    final sec = getRebAptDialogSections(raw);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (sec.summary.isNotEmpty) ...[
+          Text(
+            '주요 항목',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Theme.of(context).colorScheme.primary,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: sec.summary.map((e) => _rebAptLabeledRow(e, compact: true)).toList(),
+            ),
+          ),
+        ],
+        if (sec.rest.isNotEmpty) ...[
+          if (sec.summary.isNotEmpty) const SizedBox(height: 12),
+          const Divider(),
+          const SizedBox(height: 4),
+          Text(
+            '전체 항목',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Colors.grey.shade600,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '한글 라벨은 앱에서 매핑한 것이며, 괄호는 API 키입니다.',
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600, height: 1.3),
+          ),
+          const SizedBox(height: 8),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 320),
+            child: ListView(
+              shrinkWrap: true,
+              children: sec.rest.map((e) => _rebAptLabeledRow(e, compact: false)).toList(),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _rebAptLabeledRow(RebAptLabeledEntry e, {required bool compact}) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: compact ? 6 : 10),
+      child: Container(
+        padding: const EdgeInsets.only(left: 8),
+        decoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(
+              color: compact ? const Color(0xFF0d47a1) : Colors.grey.shade400,
+              width: 2,
+            ),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            RichText(
+              text: TextSpan(
+                style: const TextStyle(fontSize: 11, height: 1.25, color: Colors.black87),
+                children: [
+                  TextSpan(
+                    text: e.label,
+                    style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.black54),
+                  ),
+                  TextSpan(
+                    text: '  (${e.k})',
+                    style: const TextStyle(fontSize: 10, color: Colors.black38, fontWeight: FontWeight.w400),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 2),
+            SelectableText(
+              e.v,
+              style: TextStyle(fontSize: compact ? 13 : 14, height: 1.35, color: Colors.black87),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   /// 읽기 전용(한국부동산원·공공 API 등)
   Widget _buildExternalBody(BuildContext context) {
@@ -96,6 +200,10 @@ class EventDetailSheet extends StatelessWidget {
                   if (event.description != null && event.description!.isNotEmpty) ...[
                     const SizedBox(height: 10),
                     Text(event.description!, style: const TextStyle(fontSize: 13, height: 1.35)),
+                  ],
+                  if (event.externalRaw != null) ...[
+                    const SizedBox(height: 12),
+                    _buildRebAptLabeledBlock(context, event.externalRaw!),
                   ],
                 ],
               ),
