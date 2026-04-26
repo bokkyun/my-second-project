@@ -23,8 +23,104 @@ class EventDetailSheet extends StatelessWidget {
       ? DateFormat('yyyy.MM.dd (E)', 'ko').format(dt)
       : DateFormat('yyyy.MM.dd (E) HH:mm', 'ko').format(dt);
 
+  /// 읽기 전용(한국부동산원·공공 API 등)
+  Widget _buildExternalBody(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              height: 4,
+              width: 40,
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: event.flutterColor.withOpacity(0.12),
+                border: Border(left: BorderSide(color: event.flutterColor, width: 4)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    event.title,
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 6),
+                  Chip(
+                    label: const Text('아파트 청약·분양(공공데이터)', style: TextStyle(fontSize: 12)),
+                    backgroundColor: event.flutterColor.withOpacity(0.2),
+                    side: BorderSide(color: event.flutterColor.withOpacity(0.5)),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  if (event.creatorNickname != null)
+                    Text(
+                      '출처: ${event.creatorNickname}',
+                      style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                    ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.schedule, size: 18, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          event.isAllDay
+                              ? '${_fmt(event.startsAt, true)} (하루 종일)'
+                              : '${_fmt(event.startsAt, false)} ~ ${_fmt(event.endsAt, false)}',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (event.description != null && event.description!.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(event.description!, style: const TextStyle(fontSize: 13, height: 1.35)),
+                  ],
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('닫기'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (event.isExternal) {
+      return _buildExternalBody(context);
+    }
     final isOwner = event.creatorId == currentUserId;
     final isGroupAdmin = event.groupIds.any(
       (gid) => groups.any((g) => g.id == gid && g.myRole == 'admin'),

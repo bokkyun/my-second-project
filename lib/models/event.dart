@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 class CalendarEvent {
+  /// Supabase에 저장되지 않는 읽기 전용(공공 API 등) 일정
+  static const kExternalCreatorId = '__external__';
+
   final String id;
   final String title;
   final String? description;
@@ -12,8 +15,11 @@ class CalendarEvent {
   final String? creatorNickname;
   final List<String> groupIds;
 
-  /// `schedule` 일반 일정 | `group_event` 그룹 전체에 공유되는 이벤트
+  /// `schedule` 일반 일정 | `group_event` 그룹 전체에 공유되는 이벤트 | `default`·`coffee` 는 DB/웹과 맞춤
   final String eventKind;
+
+  /// null이면 Supabase. `reb-apt` 등은 캘린더에만 합쳐 표시(수정·삭제 불가).
+  final String? externalSource;
 
   const CalendarEvent({
     required this.id,
@@ -27,9 +33,11 @@ class CalendarEvent {
     this.creatorNickname,
     required this.groupIds,
     this.eventKind = 'schedule',
+    this.externalSource,
   });
 
-  bool get isGroupEvent => eventKind == 'group_event';
+  bool get isExternal => externalSource != null;
+  bool get isGroupEvent => eventKind == 'group_event' && !isExternal;
 
   factory CalendarEvent.fromMap(Map<String, dynamic> map,
       {String? creatorNickname}) {
@@ -46,6 +54,7 @@ class CalendarEvent {
       creatorNickname: creatorNickname,
       groupIds: visibility.map((v) => v['group_id'] as String).toList(),
       eventKind: map['event_kind'] as String? ?? 'schedule',
+      externalSource: null,
     );
   }
 

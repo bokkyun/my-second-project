@@ -4,9 +4,11 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../models/event.dart';
+import '../utils/reb_apt_sply_api.dart';
 import '../models/subway_display_row.dart';
 import '../models/group.dart';
 import '../services/auth_service.dart';
@@ -41,6 +43,7 @@ class _CalendarScreenState extends State<CalendarScreen>
     with WidgetsBindingObserver {
   List<Group> _groups = [];
   Set<String> _visibleGroupIds = {};
+  bool _onlyMySchedules = false;
   List<CalendarEvent> _events = [];
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
@@ -56,6 +59,12 @@ class _CalendarScreenState extends State<CalendarScreen>
   String _subwayHint = '지하철 설정에서 역을 저장해 주세요.';
   bool _loadingSubwaySummary = false;
 
+  /// 한국부동산원 청약홈(공공데이터) — 드로어에서 끄면 요청 없음
+  bool _showRebAptSply = true;
+  List<CalendarEvent> _rebAptEvents = [];
+  bool _rebAptLoading = false;
+  String? _rebAptError;
+
   @override
   void initState() {
     super.initState();
@@ -63,6 +72,7 @@ class _CalendarScreenState extends State<CalendarScreen>
     _selectedDay = DateTime.now();
     _pendingEventId = widget.initialOpenEventId;
     _loadAll();
+    unawaited(_loadRebAptPref());
     _loadProfile();
     _refreshSubwaySummary();
     _subscribeCalendarRealtime();
@@ -240,13 +250,15 @@ class _CalendarScreenState extends State<CalendarScreen>
     if (eventId != null) {
       _pendingEventId = null;
       CalendarEvent? ev;
-      for (final e in _events) {
+      for (final e in _allVisibleEvents) {
         if (e.id == eventId) {
           ev = e;
           break;
         }
       }
-      ev ??= await EventService.fetchEventById(eventId);
+      if (ev == null && !eventId.startsWith('reb-apt-')) {
+        ev = await EventService.fetchEventById(eventId);
+      }
       if (!mounted) return;
       context.go('/calendar');
       final toShow = ev;
@@ -261,7 +273,12 @@ class _CalendarScreenState extends State<CalendarScreen>
   }
 
   List<CalendarEvent> _eventsForDay(DateTime day) {
-    return _events.where((e) {
+    final uid = AuthService.currentUser?.id;
+    Iterable<CalendarEvent> list = _allVisibleEvents;
+    if (_onlyMySchedules && uid != null) {
+      list = list.where((e) => e.creatorId == uid && !e.isExternal);
+    }
+    return list.where((e) {
       final start = DateTime(e.startsAt.year, e.startsAt.month, e.startsAt.day);
       final end = DateTime(e.endsAt.year, e.endsAt.month, e.endsAt.day);
       final d = DateTime(day.year, day.month, day.day);
@@ -287,6 +304,58 @@ class _CalendarScreenState extends State<CalendarScreen>
         unawaited(_refreshSubwaySummary());
       }
     });
+  }
+
+  Future<void> _loadRebAptPref() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final on = p.getBool('calendar_show_reb_apt') ?? true;
+      if (mounted) setState(() => _showRebAptSply = on);
+      if (on) await _fetchRebAptEvents();
+    } catch (e) {
+      debugPrint('[CalendarScreen] _loadRebAptPref: $e');
+    }
+  }
+
+  Future<void> _fetchRebAptEvents() async {
+    if (!_showRebAptSply) {
+      if (mounted) {
+        setState(() {
+          _rebAptEvents = [];
+          _rebAptError = null;
+          _rebAptLoading = false;
+        });
+      }
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _rebAptLoading = true;
+        _rebAptError = null;
+      });
+    }
+    final r = await fetchRebAptSplyList();
+    if (!mounted) return;
+    setState(() {
+      _rebAptLoading = false;
+      _rebAptEvents = r.events;
+      _rebAptError = r.error;
+    });
+  }
+
+  Future<void> _setShowRebAptSply(bool value) async {
+    setState(() => _showRebAptSply = value);
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setBool('calendar_show_reb_apt', value);
+    } catch (_) {}
+    await _fetchRebAptEvents();
+  }
+
+  /// Supabase + (옵션) 청약홈 외부 일정
+  List<CalendarEvent> get _allVisibleEvents {
+    if (!_showRebAptSply) return _events;
+    return [..._events, ..._rebAptEvents];
   }
 
   Future<void> _refreshSubwaySummary() async {
@@ -696,6 +765,7 @@ class _CalendarScreenState extends State<CalendarScreen>
               : RefreshIndicator(
                   onRefresh: () async {
                     await _loadEvents();
+                    if (_showRebAptSply) await _fetchRebAptEvents();
                   },
                   child: selectedEvents.isEmpty
                       ? ListView(
@@ -856,6 +926,15 @@ class _CalendarScreenState extends State<CalendarScreen>
                   icon: const Icon(Icons.group_add),
                   label: const Text('그룹 가입하기'),
                 ),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('내 일정만', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text('내가 등록한 일정만 캘린더에 표시', style: TextStyle(fontSize: 12)),
+                  value: _onlyMySchedules,
+                  onChanged: (v) {
+                    setState(() => _onlyMySchedules = v ?? false);
+                  },
+                ),
               ]),
             )
           else ...[
@@ -877,6 +956,14 @@ class _CalendarScreenState extends State<CalendarScreen>
                   }
                 });
                 _loadEvents();
+              },
+            ),
+            CheckboxListTile(
+              title: const Text('내 일정만', style: TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: const Text('내가 등록한 일정만 캘린더에 표시', style: TextStyle(fontSize: 12)),
+              value: _onlyMySchedules,
+              onChanged: (v) {
+                setState(() => _onlyMySchedules = v ?? false);
               },
             ),
             const Divider(height: 1),
@@ -907,6 +994,54 @@ class _CalendarScreenState extends State<CalendarScreen>
           ],
 
           const Spacer(),
+
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Text(
+              '정보',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ),
+          CheckboxListTile(
+            title: const Text('아파트 청약·분양', style: TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: Text(
+              _rebAptLoading
+                  ? '불러오는 중…'
+                  : (_rebAptError ?? '한국부동산원 청약홈(공공데이터) — 키는 --dart-define=DATA_GO_KR_SERVICE_KEY'),
+              style: TextStyle(
+                fontSize: 12,
+                color: _rebAptError != null && _showRebAptSply ? Theme.of(context).colorScheme.error : null,
+              ),
+            ),
+            value: _showRebAptSply,
+            onChanged: (v) {
+              unawaited(_setShowRebAptSply(v ?? false));
+            },
+            secondary: _rebAptLoading
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: Padding(
+                      padding: EdgeInsets.all(4),
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : const Icon(Icons.apartment_outlined),
+            controlAffinity: ListTileControlAffinity.leading,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+          ),
+          CheckboxListTile(
+            title: const Text('공모주 (준비 중)', style: TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: const Text('추가 예정', style: TextStyle(fontSize: 12)),
+            value: false,
+            onChanged: null,
+            secondary: const Icon(Icons.show_chart, color: Colors.grey),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+          ),
           const Divider(height: 1),
           ListTile(
             leading: Icon(Icons.add_circle_outline, color: Theme.of(context).colorScheme.primary),

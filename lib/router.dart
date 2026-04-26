@@ -42,6 +42,7 @@ void setupAppRouter() {
       return null;
     },
     routes: [
+      GoRoute(path: '/', redirect: (_, __) => '/calendar'),
       GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
       GoRoute(path: '/signup', builder: (_, _) => const SignupScreen()),
       GoRoute(path: '/reset-password', builder: (_, _) => const ResetPasswordScreen()),

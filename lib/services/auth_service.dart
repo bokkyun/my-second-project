@@ -40,9 +40,15 @@ class AuthService {
   /// 배포 시 `https://배포도메인` 을 넣습니다. (끝 슬래시 없이 origin만)
   /// Supabase에 다른 프로젝트 URL을 쓰면 위 호스트도 그 프로젝트 ref에 맞게 바꿉니다.
 
-  /// Google Cloud Console → **웹 애플리케이션** OAuth 클라이언트 ID (`web/index.html` meta와 동일).
-  static const _googleWebClientId =
+  /// Google Cloud Console → **웹 애플리케이션** OAuth 클라이언트 ID.
+  /// 네이티브(GoogleSignIn `serverClientId`)와 웹 `index.html` gis client 와 **동일**해야 ID 토큰 검증이 됩니다.
+  /// 빌드: `--dart-define=GOOGLE_WEB_CLIENT_ID=xxx.apps.googleusercontent.com`
+  static const String _googleWebClientIdDefault =
       '71423794065-a0csmmroi6e370f2hj0n3cghjt6t7qdh.apps.googleusercontent.com';
+  static String get _googleWebClientId => const String.fromEnvironment(
+        'GOOGLE_WEB_CLIENT_ID',
+        defaultValue: _googleWebClientIdDefault,
+      );
 
   static User? get currentUser => _client.auth.currentUser;
 
@@ -106,7 +112,7 @@ class AuthService {
     if (kIsWeb) {
       final ok = await _client.auth.signInWithOAuth(
         OAuthProvider.google,
-        redirectTo: '${Uri.base.origin}/',
+        redirectTo: '${Uri.base.origin}/calendar',
         authScreenLaunchMode: LaunchMode.platformDefault,
       );
       if (!ok) {
