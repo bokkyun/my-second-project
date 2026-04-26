@@ -1,7 +1,7 @@
 name: teamsync
 description: "TeamSync - 공유 스케줄 관리 앱"
 publish_to: 'none'
-version: 1.0.12+13
+version: 1.0.13+14
 
 environment:
   sdk: ^3.11.3
