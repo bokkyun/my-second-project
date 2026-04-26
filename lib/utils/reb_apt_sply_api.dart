@@ -214,20 +214,28 @@ List<Map<String, dynamic>> filterOdcloudItemsUpcoming(List<Map<String, dynamic>>
 }
 
 CalendarEvent? mapOdcloudItemToCalendarEvent(Map<String, dynamic> item, int index) {
-  var tb = _firstT(item, [
-    '주택명',
-    '아파트명',
-    'HOUSE_NM',
+  // 캘린더: 지역(시·도 + 시·군·구) + 단지명
+  final r1 = _t(item, 'CTPRVN_NM');
+  final r2 = _t(item, 'SIGNGU_NM');
+  final region = [r1, r2].where((e) => e.isNotEmpty).join(' ').trim();
+  var nameForCalendar = _firstT(item, [
     'HSMP_NM',
+    'HOUSE_NM',
     'PBLANC_NM',
     'SPLY_HSMP_NM',
     'HSSPLY_HSMP_NM',
+    '주택명',
+    '아파트명',
     '사업명',
     'BIZ_NM',
     'SPLY_BIZ_NM',
     'BLDG_NM',
   ]);
-  if (tb.isEmpty) tb = '아파트 분양';
+  if (nameForCalendar.isEmpty) nameForCalendar = '아파트 분양';
+  final titleCore = [
+    if (region.isNotEmpty) region,
+    if (nameForCalendar.isNotEmpty) nameForCalendar,
+  ].join(' · ');
 
   final p1 = _firstT(item, ['공고번호', 'PBLANC_NO']);
   final p2 = _firstT(item, ['주택관리번호', 'HOUSE_MGMT_NO', 'HSMP_MGMT_NO']);
@@ -282,7 +290,7 @@ CalendarEvent? mapOdcloudItemToCalendarEvent(Map<String, dynamic> item, int inde
 
   return CalendarEvent(
     id: id,
-    title: '🏢 $tb$pbl',
+    title: '🏢 $titleCore$pbl',
     description: 'api.odcloud.kr(공공데이터)에서 제공됩니다. 수정/삭제할 수 없습니다.',
     startsAt: DateTime.parse(starts).toLocal(),
     endsAt: DateTime.parse(ends).toLocal(),
