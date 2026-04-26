@@ -4,7 +4,7 @@
 //
 // --dart-define=REB_APT_API_MODE=odcloud 또는 datago
 // --dart-define=DATA_GO_KR_SERVICE_KEY=인증키
-// --dart-define=REB_APT_ODCLOUD_PATH=/api/15101046/v1/uddi:...
+// --dart-define=REB_APT_ODCLOUD_PATH=/api/ApplyhomeInfoDetailSvc/v1/getAPTLttotPblancDetail
 // --dart-define=REB_APT_ODCLOUD_ORIGIN=https://api.odcloud.kr
 
 import 'dart:convert';
@@ -49,7 +49,7 @@ class RebAptSplyConfig {
   );
   static const String odcloudPath = String.fromEnvironment(
     'REB_APT_ODCLOUD_PATH',
-    defaultValue: '/api/15101046/v1/uddi:14a46595-03dd-47d3-a418-d64e52820598',
+    defaultValue: '/api/ApplyhomeInfoDetailSvc/v1/getAPTLttotPblancDetail',
   );
   static const String odcloudOrigin = String.fromEnvironment(
     'REB_APT_ODCLOUD_ORIGIN',
@@ -87,9 +87,8 @@ RebAptSplyUrlParts buildRebAptSplyListUrl() {
   final serviceKey = key.isNotEmpty ? 'serviceKey=${Uri.encodeQueryComponent(key)}' : '';
   const page = 'page=1';
   final perPage = 'perPage=${RebAptSplyConfig.pageSize}';
-  const returnType = 'returnType=JSON';
   final path = RebAptSplyConfig.odcloudPath.replaceFirst(RegExp(r'^\s+'), '');
-  final q = [page, perPage, serviceKey, returnType].where((e) => e.isNotEmpty).join('&');
+  final q = [page, perPage, serviceKey].where((e) => e.isNotEmpty).join('&');
   return RebAptSplyUrlParts(path: path, query: q, keyPresent: key.isNotEmpty, mode: 'odcloud');
 }
 
