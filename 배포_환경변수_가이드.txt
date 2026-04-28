@@ -1,0 +1,44 @@
+================================================================================
+  Flutter 앱(the-second-project / GitHub my-second-project)
+  배포·빌드 시 API 키·환경 변수 (--dart-define)
+================================================================================
+
+■ 공통 주의
+  · APK/IPA에 박히는 값은 사용자가 분석하면 볼 수 있습니다.
+  · Supabase는 RLS(행 수준 보안)로 DB를 보호합니다.
+  · 절대 GitHub에 실제 키가 든 로컬 전용 설정 파일을 커밋하지 마세요.
+
+================================================================================
+Flutter — 환경 변수
+================================================================================
+
+  Flutter는 `.env`를 자동 로드하지 않습니다. **릴리스 빌드**에는
+  `flutter build`의 `--dart-define`을 사용합니다(CI에서 동일).
+
+  Supabase (main.dart — String.fromEnvironment)
+    SUPABASE_URL
+    SUPABASE_ANON_KEY
+
+  Google Sign-In (AuthService — 선택)
+    GOOGLE_WEB_CLIENT_ID
+
+  청약/공공 API (lib/utils/reb_apt_sply_api.dart)
+    DATA_GO_KR_SERVICE_KEY
+    REB_APT_API_MODE=odcloud 또는 datago
+    REB_APT_ODCLOUD_PATH / REB_APT_ODCLOUD_ORIGIN
+    REB_APT_SPLY_PATH / REB_APT_DATA_GO_ORIGIN  (datago)
+    REB_APT_PAGE_SIZE
+
+  Open DART 공모(공시 제출일, lib/utils/dart_ipo_api.dart)
+    DART_CRTFC_KEY
+    (선택) DART_PBLNTF_TY=C  DART_PBLNTF_DETAIL_TY=C001  DART_PAGE_COUNT=100
+
+  Windows PowerShell — APK 릴리스 예:
+    cd 배포폴더\the-second-project
+    flutter build apk --release `
+      --dart-define=SUPABASE_URL=https://xxx.supabase.co `
+      --dart-define=SUPABASE_ANON_KEY=eyJ... `
+      --dart-define=DATA_GO_KR_SERVICE_KEY=공공데이터키 `
+      --dart-define=GOOGLE_WEB_CLIENT_ID=xxx.apps.googleusercontent.com
+
+================================================================================
