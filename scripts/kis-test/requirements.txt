@@ -1,0 +1,9 @@
+finance-datareader
+pandas
+numpy
+requests
+supabase
+python-dotenv
+yfinance
+lxml
+html5lib

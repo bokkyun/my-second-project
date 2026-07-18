@@ -1,0 +1,51 @@
+# 업비트 KRW 코인 매수 시그널 — 4시간마다 (00:05·06:05·12:05·18:05 KST)
+name: Crypto Signal Scanner
+
+on:
+  schedule:
+    - cron: '5 15 * * *'   # 00:05 KST
+    - cron: '5 21 * * *'   # 06:05 KST
+    - cron: '5 3 * * *'    # 12:05 KST
+    - cron: '5 9 * * *'    # 18:05 KST
+  workflow_dispatch:
+    inputs:
+      days:
+        description: '최근 N일'
+        required: false
+        default: '10'
+      limit:
+        description: '테스트용 마켓 수 제한 (비우면 전체 KRW)'
+        required: false
+        default: ''
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/kis-test/requirements.txt
+
+      - name: Install dependencies
+        working-directory: scripts/kis-test
+        run: pip install -r requirements.txt
+
+      - name: Run crypto scanner
+        working-directory: scripts/kis-test
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          UPBIT_ACCESS_KEY: ${{ secrets.UPBIT_ACCESS_KEY }}
+          UPBIT_SECRET_KEY: ${{ secrets.UPBIT_SECRET_KEY }}
+        run: |
+          ARGS="--days ${{ github.event.inputs.days || '10' }}"
+          if [ -n "${{ github.event.inputs.limit }}" ]; then
+            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          fi
+          python crypto_scanner.py $ARGS --workers 8
